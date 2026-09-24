@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import PurchaseProposal from '../models/PurchaseProposal.js';
 import Product from '../models/Product.js';
+import { generateProposalCode, isDuplicateKeyError } from '../utils/codeGenerators.js';
 import { formatVietnameseCurrency } from '../utils/vietnameseCurrency.js';
 
 const normalizeProposalItems = async (items = []) => {
@@ -39,14 +40,25 @@ const normalizeProposalItems = async (items = []) => {
   return normalized;
 };
 
-const generateProposalCode = async () => {
-  const date = new Date();
-  const yymm = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
-  const count = await PurchaseProposal.countDocuments({
-    code: { $regex: `^DXMS-${yymm}-` },
-  });
+const saveProposalWithRetry = async (proposal, autoGenerateCode, session) => {
+  let attempts = 0;
 
-  return `DXMS-${yymm}-${String(count + 1).padStart(3, '0')}`;
+  while (attempts < 5) {
+    try {
+      await proposal.save({ session });
+      return proposal;
+    } catch (error) {
+      if (!isDuplicateKeyError(error) || !autoGenerateCode) {
+        throw error;
+      }
+
+      attempts += 1;
+      proposal.code = autoGenerateCode();
+      proposal.proposalCode = proposal.code;
+    }
+  }
+
+  throw new Error('Unable to create a unique purchase proposal code.');
 };
 
 const stockInProposalItems = async (proposal, session) => {
@@ -147,7 +159,8 @@ export const createPurchaseProposal = async (req, res, next) => {
     const vatRate = Number(payload.vatRate ?? 10);
     const vatAmount = Number((subtotal * (vatRate / 100)).toFixed(2));
     const totalPayment = Number((subtotal + vatAmount).toFixed(2));
-    const code = payload.code || payload.proposalCode || (await generateProposalCode());
+    const autoGenerateCode = !payload.code && !payload.proposalCode ? generateProposalCode : null;
+    const code = payload.code || payload.proposalCode || autoGenerateCode();
 
     const proposal = new PurchaseProposal({
       ...payload,
@@ -161,7 +174,7 @@ export const createPurchaseProposal = async (req, res, next) => {
       status: payload.status || 'Pending',
     });
 
-    await proposal.save();
+    await saveProposalWithRetry(proposal, autoGenerateCode);
     res.status(201).json({ success: true, data: proposal });
   } catch (error) {
     next(error);

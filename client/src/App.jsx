@@ -430,7 +430,7 @@ function App() {
     }
 
     const payload = {
-      code: `DXMS-${new Date().toISOString().slice(0, 7).replace(/-/g, '')}-${String(new Date().getDate()).padStart(2, '0')}`,
+      code: `DXMS-${new Date().toISOString().slice(0, 7).replace(/-/g, '')}-${String(new Date().getDate()).padStart(2, '0')}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
       proposer: proposalForm.proposer,
       department: proposalForm.department,
       reason: proposalForm.reason,
@@ -470,7 +470,7 @@ function App() {
     }
 
     const payload = {
-      code: handoverForm.code || `PBG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      code: handoverForm.code || `PBG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
       exportDate: handoverForm.exportDate,
       status: 'Completed',
       items: validItems.map((item) => {

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import HandoverNote from '../models/HandoverNote.js';
 import Product from '../models/Product.js';
+import { generateHandoverCode, isDuplicateKeyError } from '../utils/codeGenerators.js';
 
 const parseDepartmentUsage = (departmentUsage, fallbackQuantity) => {
   if (!departmentUsage) return [];
@@ -114,6 +115,27 @@ const validateAndDecrementStock = async (items, session) => {
       { session }
     );
   }
+};
+
+const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
+  let attempts = 0;
+
+  while (attempts < 5) {
+    try {
+      await note.save({ session });
+      return note;
+    } catch (error) {
+      if (!isDuplicateKeyError(error) || !autoGenerateCode) {
+        throw error;
+      }
+
+      attempts += 1;
+      note.code = autoGenerateCode();
+      note.noteCode = note.code;
+    }
+  }
+
+  throw new Error('Unable to create a unique handover note code.');
 };
 
 const buildHandoverItem = async (item) => {
@@ -232,9 +254,10 @@ export const createHandoverNote = async (req, res, next) => {
     }
 
     const normalizedItems = await Promise.all(items.map((item) => buildHandoverItem(item)));
+    const autoGenerateCode = !payload.code && !payload.noteCode ? generateHandoverCode : null;
     const note = new HandoverNote({
       ...payload,
-      code: payload.code || payload.noteCode || `PBG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      code: payload.code || payload.noteCode || autoGenerateCode(),
       items: normalizedItems,
       status: payload.status || 'Completed',
     });
@@ -247,7 +270,7 @@ export const createHandoverNote = async (req, res, next) => {
           await validateAndDecrementStock(normalizedItems, session);
         }
 
-        await note.save({ session });
+        await saveHandoverWithRetry(note, autoGenerateCode, session);
       });
     } finally {
       await session.endSession();
