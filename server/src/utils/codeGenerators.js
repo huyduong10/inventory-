@@ -17,6 +17,7 @@ export const generateProposalCode = () => {
 export const generateHandoverCode = () => {
   const now = new Date();
   const dateKey = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const suffix = `${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const timeStamp = now.getTime().toString(36).slice(-6).toUpperCase();
+  const suffix = `${timeStamp}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   return `PBG-${dateKey}-${suffix}`;
 };

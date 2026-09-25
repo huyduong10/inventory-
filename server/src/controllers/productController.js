@@ -1,6 +1,4 @@
 import Product from '../models/Product.js';
-import HandoverNote from '../models/HandoverNote.js';
-import PurchaseProposal from '../models/PurchaseProposal.js';
 import { createProductSchema, updateProductSchema } from '../validators/productValidators.js';
 
 const stockStatus = (quantity, minThreshold) => {
@@ -148,16 +146,6 @@ export const deleteProduct = async (req, res, next) => {
 
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
-    }
-
-    const hasProposalHistory = await PurchaseProposal.exists({ 'items.product': product._id });
-    const hasHandoverHistory = await HandoverNote.exists({ 'items.product': product._id });
-
-    if (hasProposalHistory || hasHandoverHistory) {
-      return res.status(409).json({
-        success: false,
-        message: 'Không thể xóa sản phẩm đã có lịch sử đề xuất hoặc phiếu bàn giao.',
-      });
     }
 
     await Product.findByIdAndDelete(req.params.id);

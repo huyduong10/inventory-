@@ -3,6 +3,8 @@ import { PackagePlus, Plus, Trash2 } from 'lucide-react';
 
 const COMPANY_NAME = 'CÔNG TY TNHH TIẾN ANH';
 
+const generateHandoverCode = () => `PBG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
 const initialPurchaseItems = [
   { id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' },
 ];
@@ -77,7 +79,7 @@ export default function DocumentCreation({
   });
   const [handoverForm, setHandoverForm] = useState({
     name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-    code: 'PBG-001',
+    code: generateHandoverCode(),
     exportDate: new Date().toISOString().slice(0, 10),
     receiverName: 'Anh Hùng',
     department: 'IT',
@@ -115,7 +117,7 @@ export default function DocumentCreation({
     setActiveTab('handover');
     setHandoverForm({
       name: documentData.name || `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-      code: documentData.code || 'PBG-001',
+      code: documentData.code || generateHandoverCode(),
       exportDate: documentData.exportDate || new Date().toISOString().slice(0, 10),
       receiverName: documentData.receiverName || 'Anh Hùng',
       department: documentData.department || 'IT',
@@ -269,7 +271,7 @@ export default function DocumentCreation({
     onSaveHandoverDocument(payload, editingDocument?.id);
     setHandoverForm({
       name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-      code: 'PBG-001',
+      code: generateHandoverCode(),
       exportDate: new Date().toISOString().slice(0, 10),
       receiverName: 'Anh Hùng',
       department: 'IT',

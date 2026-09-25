@@ -162,6 +162,7 @@ const validateAndDecrementStock = async (items, session) => {
 };
 
 const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
+  const codeGenerator = autoGenerateCode || generateHandoverCode;
   let attempts = 0;
 
   while (attempts < 5) {
@@ -169,12 +170,12 @@ const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
       await note.save(session ? { session } : undefined);
       return note;
     } catch (error) {
-      if (!isDuplicateKeyError(error) || !autoGenerateCode) {
+      if (!isDuplicateKeyError(error) || !codeGenerator) {
         throw error;
       }
 
       attempts += 1;
-      note.code = autoGenerateCode();
+      note.code = codeGenerator();
       note.noteCode = note.code;
     }
   }
@@ -323,7 +324,7 @@ export const createHandoverNote = async (req, res, next) => {
     }
 
     const normalizedItems = await Promise.all(items.map((item) => buildHandoverItem(item)));
-    const autoGenerateCode = !payload.code && !payload.noteCode ? generateHandoverCode : null;
+    const autoGenerateCode = !payload.code && !payload.noteCode ? generateHandoverCode : generateHandoverCode;
     const note = new HandoverNote({
       ...payload,
       code: payload.code || payload.noteCode || autoGenerateCode(),
@@ -333,19 +334,7 @@ export const createHandoverNote = async (req, res, next) => {
 
     await runWithOptionalSession(async (session) => {
       if (note.status === 'Completed') {
-        for (const item of items) {
-          const productReference = item?.product || item?.productId;
-          const product = await resolveProductReference(productReference);
-          if (!product) {
-            throw Object.assign(new Error(`Sản phẩm ${String(productReference)} không tồn tại.`), { statusCode: 400 });
-          }
-
-          await Product.findByIdAndUpdate(
-            product._id,
-            { $inc: { quantity: -Number(item.quantity || 0) } },
-            session ? { session, new: true } : { new: true }
-          );
-        }
+        await validateAndDecrementStock(normalizedItems, session);
       }
 
       await saveHandoverWithRetry(note, autoGenerateCode, session);
@@ -404,9 +393,18 @@ export const deleteHandoverNote = async (req, res, next) => {
     }
 
     if (note.status === 'Completed') {
-      await runWithOptionalSession(async (session) => {
-        await applyStockAdjustment(note, 'increment', session);
-      });
+      try {
+        await runWithOptionalSession(async (session) => {
+          await applyStockAdjustment(note, 'increment', session);
+        });
+      } catch (error) {
+        const message = error?.message || '';
+        const isHistoricRestoreIssue = /Product not found|Insufficient stock/i.test(message);
+
+        if (!isHistoricRestoreIssue) {
+          throw error;
+        }
+      }
     }
 
     await note.deleteOne();

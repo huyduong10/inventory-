@@ -4,6 +4,8 @@ import { api } from './api/client';
 import ProductManagement from './components/ProductManagement';
 import DocumentCreation from './components/DocumentCreation';
 import DocumentList from './components/DocumentList';
+import { filterProductsAfterDelete } from './lib/productDelete';
+import { getDocumentIdentity, mergeDocuments, removeDocumentByIdentity } from './lib/documentIdentity';
 import { deleteSavedFormat, getSavedFormats, upsertSavedFormat } from './lib/savedFormats';
 
 const fallbackProducts = [
@@ -27,6 +29,15 @@ const documentTabs = [
   { key: 'create', label: 'Tạo phiếu mới', icon: FileText },
   { key: 'documents', label: 'Danh sách phiếu lưu trữ', icon: FolderOpen },
 ];
+
+const normalizeServerDocument = (record, type) => ({
+  id: record?._id || record?.id || record?.code || record?.noteCode || record?.proposalCode || `${type}-${Date.now()}`,
+  type,
+  name: record?.name || record?.code || record?.noteCode || record?.proposalCode || 'Phiếu lưu trữ',
+  data: record,
+  createdAt: record?.createdAt || record?.updatedAt || new Date().toISOString(),
+  updatedAt: record?.updatedAt || record?.createdAt || new Date().toISOString(),
+});
 
 function App() {
   const [activeTab, setActiveTab] = useState('warehouse');
@@ -56,13 +67,63 @@ function App() {
     }
   };
 
+  const fetchExistingDocuments = async () => {
+    try {
+      const [purchaseResponse, handoverResponse] = await Promise.all([
+        api.get('/purchase-proposals?limit=100'),
+        api.get('/handover-notes?limit=100'),
+      ]);
+
+      const serverDocuments = [
+        ...(Array.isArray(purchaseResponse?.data?.data) ? purchaseResponse.data.data.map((record) => normalizeServerDocument(record, 'purchase')) : []),
+        ...(Array.isArray(handoverResponse?.data?.data) ? handoverResponse.data.data.map((record) => normalizeServerDocument(record, 'handover')) : []),
+      ];
+
+      const mergedDocuments = mergeDocuments([...serverDocuments, ...getSavedFormats()]);
+      setDocuments(mergedDocuments);
+      return mergedDocuments;
+    } catch (_error) {
+      const fallbackDocuments = mergeDocuments(getSavedFormats());
+      setDocuments(fallbackDocuments);
+      return fallbackDocuments;
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchExistingDocuments();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      fetchExistingDocuments();
+    }
+  }, [activeTab]);
+
   const persistSavedDocuments = (nextDocuments) => {
-    setDocuments(nextDocuments);
+    const mergedDocuments = mergeDocuments([...nextDocuments, ...documents]);
+    setDocuments(mergedDocuments);
     return nextDocuments;
+  };
+
+  const removeDocumentFromList = (documentId) => {
+    const targetDocument = documents.find((document) => document.id === documentId);
+    const targetIdentity = getDocumentIdentity(targetDocument);
+
+    setDocuments((current) => {
+      if (!targetIdentity) {
+        return mergeDocuments(current.filter((document) => document.id !== documentId));
+      }
+
+      return mergeDocuments(removeDocumentByIdentity(current, targetIdentity));
+    });
+
+    const savedLocalDocuments = getSavedFormats();
+    const remainingSavedLocalDocuments = targetIdentity ? removeDocumentByIdentity(savedLocalDocuments, targetIdentity) : savedLocalDocuments.filter((document) => document.id !== documentId);
+
+    if (remainingSavedLocalDocuments.length !== savedLocalDocuments.length) {
+      window.localStorage.setItem('inventory_saved_formats', JSON.stringify(remainingSavedLocalDocuments));
+    }
   };
 
   const saveDocumentToList = (documentType, formData, documentId) => {
@@ -74,7 +135,7 @@ function App() {
 
     const payload = { ...formData, name: safeName || fallbackName };
     const nextDocuments = upsertSavedFormat({
-      id: documentId,
+      id: documentId || payload?._id || payload?.id || `${documentType}:${payload.code || payload?.name || 'saved'}`,
       type: documentType,
       name: payload.name,
       data: payload,
@@ -93,15 +154,10 @@ function App() {
       setProducts((current) => [nextProduct, ...current]);
       addToast('�� th�m s?n ph?m m?i');
       return true;
-    } catch (_error) {
-      const localProduct = {
-        _id: `local-${Date.now()}`,
-        ...payload,
-        stockStatus: getStockStatus({ ...payload, minThreshold: Number(payload.minThreshold || 0) }),
-      };
-      setProducts((current) => [localProduct, ...current]);
-      addToast('�� th�m s?n ph?m m?i');
-      return true;
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Không thể thêm sản phẩm mới.';
+      addToast(message);
+      return false;
     }
   };
 
@@ -112,27 +168,23 @@ function App() {
       setProducts((current) => current.map((product) => (product._id === productId ? updatedProduct : product)));
       addToast('�� c?p nh?t s?n ph?m');
       return true;
-    } catch (_error) {
-      setProducts((current) =>
-        current.map((product) =>
-          product._id === productId
-            ? { ...product, ...payload, quantity: Number(payload.quantity || product.quantity || 0), stockStatus: getStockStatus({ ...product, ...payload }) }
-            : product
-        )
-      );
-      addToast('�� c?p nh?t s?n ph?m');
-      return true;
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Không thể cập nhật sản phẩm.';
+      addToast(message);
+      return false;
     }
   };
 
   const handleDeleteProduct = async (productId) => {
     try {
       await api.delete(`/products/${productId}`);
-      setProducts((current) => current.filter((product) => product._id !== productId));
-      addToast('�� x�a s?n ph?m');
-    } catch (_error) {
-      setProducts((current) => current.filter((product) => product._id !== productId));
-      addToast('�� x�a s?n ph?m');
+      setProducts((current) => filterProductsAfterDelete(current, productId, true));
+      addToast('Đã xóa sản phẩm');
+      return true;
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Không thể xóa sản phẩm.';
+      addToast(message);
+      return false;
     }
   };
 
@@ -161,9 +213,11 @@ function App() {
       const savedDocument = response?.data?.data || { ...payload, items: sanitizedItems, code: requestBody.code };
       saveDocumentToList('purchase', { ...payload, items: sanitizedItems, code: savedDocument.code || requestBody.code }, documentId);
       addToast('�� luu phi?u d? xu?t mua s?m');
-    } catch (_error) {
-      saveDocumentToList('purchase', { ...payload, items: sanitizedItems }, documentId);
-      addToast('�� luu phi?u d? xu?t mua s?m');
+      return true;
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Không thể lưu phiếu đề xuất mua sắm.';
+      addToast(message);
+      return false;
     }
   };
 
@@ -198,16 +252,53 @@ function App() {
       const savedDocument = response?.data?.data || { ...payload, items: requestItems, code: requestBody.code };
       saveDocumentToList('handover', { ...payload, items: requestItems, code: savedDocument.code || requestBody.code }, documentId);
       addToast('�� luu phi?u b�n giao');
-    } catch (_error) {
-      saveDocumentToList('handover', { ...payload, items: requestItems }, documentId);
-      addToast('�� luu phi?u b�n giao');
+      return true;
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Không thể lưu phiếu bàn giao.';
+      addToast(message);
+      return false;
     }
   };
 
   const handleDeleteDocument = async (documentId) => {
-    const nextDocuments = deleteSavedFormat(documentId);
-    persistSavedDocuments(nextDocuments);
-    addToast('�� x�a phi?u');
+    const targetDocument = documents.find((document) => document.id === documentId);
+    const serverId = targetDocument?.data?._id || targetDocument?.data?.id;
+    const targetIdentity = getDocumentIdentity(targetDocument);
+
+    if (targetDocument?.type === 'purchase' && serverId) {
+      try {
+        await api.delete(`/purchase-proposals/${serverId}`);
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          const message = error?.response?.data?.message || 'Không thể xóa phiếu đề xuất mua sắm.';
+          addToast(message);
+          return;
+        }
+      }
+    }
+
+    if (targetDocument?.type === 'handover' && serverId) {
+      try {
+        await api.delete(`/handover-notes/${serverId}`);
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          const message = error?.response?.data?.message || 'Không thể xóa phiếu bàn giao.';
+          addToast(message);
+          return;
+        }
+      }
+    }
+
+    const matchingLocalDocuments = getSavedFormats().filter((document) => getDocumentIdentity(document) === targetIdentity);
+
+    if (matchingLocalDocuments.length) {
+      const nextDocuments = removeDocumentByIdentity(getSavedFormats(), targetIdentity);
+      persistSavedDocuments(nextDocuments);
+    } else {
+      removeDocumentFromList(documentId);
+    }
+
+    addToast('Đã xóa phiếu');
   };
 
   const handleEditDocument = (document) => {
@@ -296,7 +387,7 @@ function App() {
             onViewDocument={(document) => setEditingDocument(document)}
             onEditDocument={handleEditDocument}
             onDeleteDocument={handleDeleteDocument}
-            onRefreshDocuments={() => setDocuments(getSavedFormats())}
+            onRefreshDocuments={fetchExistingDocuments}
           />
         ) : null}
       </div>
