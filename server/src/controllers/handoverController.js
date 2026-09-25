@@ -31,6 +31,16 @@ const parseDepartmentUsage = (departmentUsage, fallbackQuantity) => {
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const normalizeHandoverStatus = (status, fallback = 'Completed') => {
+  const candidate = String(status ?? fallback).trim();
+
+  if (!candidate) return fallback;
+  if (/^completed$/i.test(candidate)) return 'Completed';
+  if (/^cancelled$/i.test(candidate)) return 'Cancelled';
+
+  return fallback;
+};
+
 const resolveProductReference = async (productValue) => {
   if (!productValue) return null;
 
@@ -50,9 +60,36 @@ const resolveProductReference = async (productValue) => {
   });
 };
 
+const runWithOptionalSession = async (operation) => {
+  let session = null;
+
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return operation(null);
+    }
+
+    session = await mongoose.startSession();
+    return await session.withTransaction(async () => operation(session));
+  } catch (error) {
+    const message = error?.message || '';
+    const sessionUnsupported = /session|replica set|transaction|buffering timed out|not connected/i.test(message);
+
+    if (sessionUnsupported) {
+      return operation(null);
+    }
+
+    throw error;
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+};
+
 const applyStockAdjustment = async (note, direction, session) => {
   for (const item of note.items || []) {
-    const product = await Product.findById(item.product).session(session);
+    const productQuery = session ? Product.findById(item.product).session(session) : Product.findById(item.product);
+    const product = await productQuery;
 
     if (!product) {
       throw Object.assign(new Error(`Product not found for item: ${item.product}`), { statusCode: 400 });
@@ -64,10 +101,11 @@ const applyStockAdjustment = async (note, direction, session) => {
       throw Object.assign(new Error(`Insufficient stock for ${product.name}. Requested: ${quantity}, Available: ${product.quantity}`), { statusCode: 400 });
     }
 
-    await Product.updateOne(
+    const updateOptions = session ? { session } : {};
+    await Product.findOneAndUpdate(
       { _id: product._id },
       { $inc: { quantity: direction === 'decrement' ? -quantity : quantity } },
-      { session }
+      { ...updateOptions, new: true }
     );
   }
 };
@@ -88,7 +126,8 @@ const validateAndDecrementStock = async (items, session) => {
   }
 
   const productIds = [...requiredByProduct.keys()];
-  const products = await Product.find({ _id: { $in: productIds } }).session(session);
+  const productQuery = session ? Product.find({ _id: { $in: productIds } }).session(session) : Product.find({ _id: { $in: productIds } });
+  const products = await productQuery;
   const productMap = new Map(products.map((product) => [String(product._id), product]));
 
   for (const [productId, requiredQuantity] of requiredByProduct.entries()) {
@@ -109,11 +148,16 @@ const validateAndDecrementStock = async (items, session) => {
       throw Object.assign(new Error(`Product not found: ${String(item.product)}`), { statusCode: 400 });
     }
 
-    await Product.updateOne(
-      { _id: product._id },
+    const updateOptions = session ? { session } : {};
+    const result = await Product.findOneAndUpdate(
+      { _id: product._id, quantity: { $gte: Number(item.quantity || 0) } },
       { $inc: { quantity: -Number(item.quantity || 0) } },
-      { session }
+      { ...updateOptions, new: true }
     );
+
+    if (!result) {
+      throw Object.assign(new Error(`Insufficient stock for ${product.name}. Requested: ${Number(item.quantity || 0)}`), { statusCode: 400 });
+    }
   }
 };
 
@@ -122,7 +166,7 @@ const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
 
   while (attempts < 5) {
     try {
-      await note.save({ session });
+      await note.save(session ? { session } : undefined);
       return note;
     } catch (error) {
       if (!isDuplicateKeyError(error) || !autoGenerateCode) {
@@ -139,11 +183,13 @@ const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
 };
 
 const buildHandoverItem = async (item) => {
-  if (!item?.product) {
+  const productReference = item?.product || item?.productId;
+
+  if (!productReference) {
     throw new Error('Each handover item must include a valid product reference.');
   }
 
-  const product = await resolveProductReference(item.product);
+  const product = await resolveProductReference(productReference);
 
   if (!product) {
     throw new Error(`Product not found: ${item.product}`);
@@ -248,9 +294,32 @@ export const createHandoverNote = async (req, res, next) => {
   try {
     const payload = req.body || {};
     const items = Array.isArray(payload.items) ? payload.items : [];
+    const normalizedStatus = normalizeHandoverStatus(payload.status, 'Completed');
 
     if (items.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one handover item is required.' });
+    }
+
+    for (const item of items) {
+      const productReference = item?.product || item?.productId;
+      const quantity = Number(item?.quantity || 0);
+
+      if (!productReference) {
+        return res.status(400).json({ success: false, message: 'Mỗi dòng phiếu bàn giao phải có mã sản phẩm.' });
+      }
+
+      const product = await resolveProductReference(productReference);
+
+      if (!product) {
+        return res.status(400).json({ success: false, message: `Sản phẩm ${String(productReference)} không tồn tại.` });
+      }
+
+      if (Number(product.quantity) < quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Sản phẩm ${product.name} chỉ còn ${product.quantity} ${product.unit}, không đủ để xuất!`,
+        });
+      }
     }
 
     const normalizedItems = await Promise.all(items.map((item) => buildHandoverItem(item)));
@@ -259,26 +328,32 @@ export const createHandoverNote = async (req, res, next) => {
       ...payload,
       code: payload.code || payload.noteCode || autoGenerateCode(),
       items: normalizedItems,
-      status: payload.status || 'Completed',
+      status: normalizedStatus,
     });
 
-    const session = await mongoose.startSession();
+    await runWithOptionalSession(async (session) => {
+      if (note.status === 'Completed') {
+        for (const item of items) {
+          const productReference = item?.product || item?.productId;
+          const product = await resolveProductReference(productReference);
+          if (!product) {
+            throw Object.assign(new Error(`Sản phẩm ${String(productReference)} không tồn tại.`), { statusCode: 400 });
+          }
 
-    try {
-      await session.withTransaction(async () => {
-        if (note.status === 'Completed') {
-          await validateAndDecrementStock(normalizedItems, session);
+          await Product.findByIdAndUpdate(
+            product._id,
+            { $inc: { quantity: -Number(item.quantity || 0) } },
+            session ? { session, new: true } : { new: true }
+          );
         }
+      }
 
-        await saveHandoverWithRetry(note, autoGenerateCode, session);
-      });
-    } finally {
-      await session.endSession();
-    }
+      await saveHandoverWithRetry(note, autoGenerateCode, session);
+    });
 
     const createdNote = await HandoverNote.findById(note._id).populate('items.product', 'name sku unit quantity');
 
-    res.status(201).json({ success: true, data: createdNote });
+    res.status(201).json({ success: true, data: createdNote, message: 'Phiếu bàn giao đã được tạo thành công.' });
   } catch (error) {
     next(error);
   }
@@ -294,30 +369,24 @@ export const updateHandoverNoteStatus = async (req, res, next) => {
     }
 
     const previousStatus = handoverNote.status;
-    const nextStatus = status || handoverNote.status;
+    const nextStatus = normalizeHandoverStatus(status, handoverNote.status);
 
     if (!['Completed', 'Cancelled'].includes(nextStatus)) {
       return res.status(400).json({ success: false, message: 'Invalid handover status.' });
     }
 
-    const session = await mongoose.startSession();
+    await runWithOptionalSession(async (session) => {
+      if (nextStatus === 'Completed' && previousStatus !== 'Completed') {
+        await validateAndDecrementStock(handoverNote.items, session);
+      }
 
-    try {
-      await session.withTransaction(async () => {
-        if (nextStatus === 'Completed' && previousStatus !== 'Completed') {
-          await validateAndDecrementStock(handoverNote.items, session);
-        }
+      if (nextStatus === 'Cancelled' && previousStatus === 'Completed') {
+        await applyStockAdjustment(handoverNote, 'increment', session);
+      }
 
-        if (nextStatus === 'Cancelled' && previousStatus === 'Completed') {
-          await applyStockAdjustment(handoverNote, 'increment', session);
-        }
-
-        handoverNote.status = nextStatus;
-        await handoverNote.save({ session });
-      });
-    } finally {
-      await session.endSession();
-    }
+      handoverNote.status = nextStatus;
+      await handoverNote.save(session ? { session } : undefined);
+    });
 
     const updatedNote = await HandoverNote.findById(handoverNote._id).populate('items.product', 'name sku unit quantity');
     res.json({ success: true, data: updatedNote });
@@ -335,11 +404,9 @@ export const deleteHandoverNote = async (req, res, next) => {
     }
 
     if (note.status === 'Completed') {
-      const session = await mongoose.startSession();
-      await session.withTransaction(async () => {
+      await runWithOptionalSession(async (session) => {
         await applyStockAdjustment(note, 'increment', session);
       });
-      await session.endSession();
     }
 
     await note.deleteOne();
