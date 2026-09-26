@@ -5,6 +5,18 @@ const statusColors = {
   'In Stock': 'bg-emerald-100 text-emerald-700',
   'Low Stock': 'bg-amber-100 text-amber-700',
   'Out of Stock': 'bg-rose-100 text-rose-700',
+  'Còn': 'bg-emerald-100 text-emerald-700',
+  'Sắp hết': 'bg-amber-100 text-amber-700',
+  'Hết': 'bg-rose-100 text-rose-700',
+};
+
+const statusLabels = {
+  'In Stock': 'Còn',
+  'Low Stock': 'Sắp hết',
+  'Out of Stock': 'Hết',
+  'Còn': 'Còn',
+  'Sắp hết': 'Sắp hết',
+  'Hết': 'Hết',
 };
 
 const pageSizes = [5, 10, 20];
@@ -26,23 +38,46 @@ export default function ProductManagement({
   const [form, setForm] = useState({
     name: '',
     sku: '',
-    category: 'Bút',
+    category: '',
     unit: 'Cái',
     quantity: 0,
-    minThreshold: 5,
+    minThreshold: 0,
     location: 'Kệ mới',
   });
 
+  const uniqueCategories = useMemo(() => {
+    const categoryMap = new Map();
+    products.forEach((p) => {
+      const raw = p.category?.trim();
+      if (raw) {
+        const lower = raw.toLowerCase();
+        if (!categoryMap.has(lower)) {
+          const display = raw.charAt(0).toUpperCase() + raw.slice(1);
+          categoryMap.set(lower, display);
+        }
+      }
+    });
+    return Array.from(categoryMap.values()).sort((a, b) =>
+      a.localeCompare(b, 'vi', { sensitivity: 'base' })
+    );
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
+    const normalizedCategory = category.trim().toLowerCase();
 
     return products.filter((product) => {
       const matchesSearch =
         !normalizedSearch ||
         product.name?.toLowerCase().includes(normalizedSearch) ||
         product.sku?.toLowerCase().includes(normalizedSearch);
-      const matchesCategory = category === 'all' || product.category === category;
-      const matchesStatus = statusFilter === 'all' || product.stockStatus === statusFilter;
+      const matchesCategory =
+        category === 'all' ||
+        product.category?.trim().toLowerCase() === normalizedCategory;
+      const matchesStatus =
+        statusFilter === 'all' ||
+        product.stockStatus === statusFilter ||
+        statusLabels[product.stockStatus] === statusFilter;
 
       return matchesSearch && matchesCategory && matchesStatus;
     });
@@ -56,10 +91,10 @@ export default function ProductManagement({
     setForm({
       name: '',
       sku: '',
-      category: 'Bút',
+      category: '',
       unit: 'Cái',
       quantity: 0,
-      minThreshold: 5,
+      minThreshold: 0,
       location: 'Kệ mới',
     });
   };
@@ -75,7 +110,7 @@ export default function ProductManagement({
     setForm({
       name: product.name || '',
       sku: product.sku || '',
-      category: product.category || 'Bút',
+      category: product.category || '',
       unit: product.unit || 'Cái',
       quantity: Number(product.quantity || 0),
       minThreshold: Number(product.minThreshold || 0),
@@ -89,7 +124,7 @@ export default function ProductManagement({
     const payload = {
       name: form.name.trim(),
       sku: form.sku.trim(),
-      category: form.category,
+      category: form.category.trim() || 'Khác',
       unit: form.unit.trim() || 'Cái',
       quantity: Number(form.quantity || 0),
       minThreshold: Number(form.minThreshold || 0),
@@ -113,7 +148,7 @@ export default function ProductManagement({
     const payload = {
       name: form.name.trim(),
       sku: form.sku.trim(),
-      category: form.category,
+      category: form.category.trim() || 'Khác',
       unit: form.unit.trim() || 'Cái',
       quantity: Number(form.quantity || 0),
       minThreshold: Number(form.minThreshold || 0),
@@ -178,10 +213,11 @@ export default function ProductManagement({
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none"
           >
             <option value="all">Tất cả danh mục</option>
-            <option value="Bút">Bút</option>
-            <option value="Giấy">Giấy</option>
-            <option value="Dán">Dán</option>
-            <option value="Dụng cụ">Dụng cụ</option>
+            {uniqueCategories.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
 
           <select
@@ -193,9 +229,9 @@ export default function ProductManagement({
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none"
           >
             <option value="all">Tất cả trạng thái</option>
-            <option value="In Stock">In Stock</option>
-            <option value="Low Stock">Low Stock</option>
-            <option value="Out of Stock">Out of Stock</option>
+            <option value="In Stock">Còn</option>
+            <option value="Low Stock">Sắp hết</option>
+            <option value="Out of Stock">Hết</option>
           </select>
         </div>
 
@@ -224,7 +260,6 @@ export default function ProductManagement({
               <th className="px-4 py-3 font-medium text-slate-700">Tên quy cách chủng loại</th>
               <th className="px-4 py-3 font-medium text-slate-700">ĐVT</th>
               <th className="px-4 py-3 font-medium text-slate-700">Tồn kho</th>
-              <th className="px-4 py-3 font-medium text-slate-700">Ngưỡng</th>
               <th className="px-4 py-3 font-medium text-slate-700">Trạng thái</th>
               <th className="px-4 py-3 font-medium text-slate-700">Thao tác</th>
             </tr>
@@ -242,10 +277,9 @@ export default function ProductManagement({
                   </td>
                   <td className="px-4 py-3 text-slate-600">{product.unit}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{product.quantity}</td>
-                  <td className="px-4 py-3 text-slate-600">{product.minThreshold}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusColors[product.stockStatus] || 'bg-slate-200 text-slate-700'}`}>
-                      {product.stockStatus}
+                      {statusLabels[product.stockStatus] || product.stockStatus}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -272,7 +306,7 @@ export default function ProductManagement({
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-500">
                   Không có sản phẩm nào phù hợp.
                 </td>
               </tr>
@@ -306,9 +340,8 @@ export default function ProductManagement({
                 key={pageNumber}
                 type="button"
                 onClick={() => setCurrentPage(pageNumber)}
-                className={`h-9 min-w-9 rounded-lg px-2 text-sm font-medium ${
-                  isActive ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'
-                }`}
+                className={`h-9 min-w-9 rounded-lg px-2 text-sm font-medium ${isActive ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'
+                  }`}
               >
                 {pageNumber}
               </button>
@@ -340,16 +373,10 @@ export default function ProductManagement({
             <div className="grid gap-3 md:grid-cols-2">
               <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Tên sản phẩm" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} placeholder="Mã SKU" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none">
-                <option value="Bút">Bút</option>
-                <option value="Giấy">Giấy</option>
-                <option value="Dán">Dán</option>
-                <option value="Dụng cụ">Dụng cụ</option>
-              </select>
+              <input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} placeholder="Loại sản phẩm (VD: Bút, Giấy, Dán,...)" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="ĐVT" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value || 0) })} placeholder="Tồn kho" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <input type="number" value={form.minThreshold} onChange={(event) => setForm({ ...form, minThreshold: Number(event.target.value || 0) })} placeholder="Ngưỡng cảnh báo" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Vị trí" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none md:col-span-2" />
+              <input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Vị trí" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
             </div>
 
             <div className="mt-5 flex justify-end gap-3">
@@ -377,16 +404,10 @@ export default function ProductManagement({
             <div className="grid gap-3 md:grid-cols-2">
               <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Tên sản phẩm" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} placeholder="Mã SKU" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none">
-                <option value="Bút">Bút</option>
-                <option value="Giấy">Giấy</option>
-                <option value="Dán">Dán</option>
-                <option value="Dụng cụ">Dụng cụ</option>
-              </select>
+              <input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} placeholder="Loại sản phẩm (VD: Bút, Giấy, Dán,...)" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="ĐVT" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
               <input type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value || 0) })} placeholder="Tồn kho" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <input type="number" value={form.minThreshold} onChange={(event) => setForm({ ...form, minThreshold: Number(event.target.value || 0) })} placeholder="Ngưỡng cảnh báo" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
-              <input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Vị trí" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none md:col-span-2" />
+              <input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Vị trí" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none" />
             </div>
 
             <div className="mt-5 flex justify-end gap-3">

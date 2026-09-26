@@ -41,10 +41,8 @@ const normalizeServerDocument = (record, type) => ({
 
 function App() {
   const [activeTab, setActiveTab] = useState('warehouse');
-  const [products, setProducts] = useState(() =>
-    fallbackProducts.map((product) => ({ ...product, stockStatus: getStockStatus(product) }))
-  );
-  const [documents, setDocuments] = useState(() => getSavedFormats());
+  const [products, setProducts] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [toast, setToast] = useState('');
   const [editingDocument, setEditingDocument] = useState(null);
 
@@ -59,9 +57,7 @@ function App() {
       const response = await api.get('/products');
       const productList = Array.isArray(response?.data?.data) ? response.data.data : [];
 
-      setProducts(
-        productList.length ? productList.map((product) => ({ ...product, stockStatus: getStockStatus(product) })) : fallbackProducts
-      );
+      setProducts(productList.map((product) => ({ ...product, stockStatus: getStockStatus(product) })));
     } catch (_error) {
       setProducts(fallbackProducts.map((product) => ({ ...product, stockStatus: getStockStatus(product) })));
     }
@@ -79,7 +75,25 @@ function App() {
         ...(Array.isArray(handoverResponse?.data?.data) ? handoverResponse.data.data.map((record) => normalizeServerDocument(record, 'handover')) : []),
       ];
 
-      const mergedDocuments = mergeDocuments([...serverDocuments, ...getSavedFormats()]);
+      // Prune stale documents from localStorage:
+      // If a document was synced to server (has _id or standard document code) but is no longer on server,
+      // it was deleted from MongoDB and must be purged from localStorage.
+      const serverIdentities = new Set(serverDocuments.map(getDocumentIdentity).filter(Boolean));
+      const currentSaved = getSavedFormats();
+      const updatedSaved = currentSaved.filter((doc) => {
+        const identity = getDocumentIdentity(doc);
+        const isServerBacked = Boolean(doc?.data?._id || doc?._id || (doc?.data?.code && /^(DXMS|PBG)-/i.test(doc.data.code)));
+        if (isServerBacked && !serverIdentities.has(identity)) {
+          return false;
+        }
+        return true;
+      });
+
+      if (updatedSaved.length !== currentSaved.length) {
+        window.localStorage.setItem('inventory_saved_formats', JSON.stringify(updatedSaved));
+      }
+
+      const mergedDocuments = mergeDocuments([...serverDocuments, ...updatedSaved]);
       setDocuments(mergedDocuments);
       return mergedDocuments;
     } catch (_error) {
@@ -101,8 +115,7 @@ function App() {
   }, [activeTab]);
 
   const persistSavedDocuments = (nextDocuments) => {
-    const mergedDocuments = mergeDocuments([...nextDocuments, ...documents]);
-    setDocuments(mergedDocuments);
+    setDocuments(nextDocuments);
     return nextDocuments;
   };
 
@@ -111,19 +124,18 @@ function App() {
     const targetIdentity = getDocumentIdentity(targetDocument);
 
     setDocuments((current) => {
-      if (!targetIdentity) {
-        return mergeDocuments(current.filter((document) => document.id !== documentId));
+      if (targetIdentity) {
+        return removeDocumentByIdentity(current, targetIdentity);
       }
-
-      return mergeDocuments(removeDocumentByIdentity(current, targetIdentity));
+      return current.filter((document) => document.id !== documentId);
     });
 
     const savedLocalDocuments = getSavedFormats();
-    const remainingSavedLocalDocuments = targetIdentity ? removeDocumentByIdentity(savedLocalDocuments, targetIdentity) : savedLocalDocuments.filter((document) => document.id !== documentId);
+    const remainingSavedLocalDocuments = targetIdentity
+      ? removeDocumentByIdentity(savedLocalDocuments, targetIdentity)
+      : savedLocalDocuments.filter((document) => document.id !== documentId);
 
-    if (remainingSavedLocalDocuments.length !== savedLocalDocuments.length) {
-      window.localStorage.setItem('inventory_saved_formats', JSON.stringify(remainingSavedLocalDocuments));
-    }
+    window.localStorage.setItem('inventory_saved_formats', JSON.stringify(remainingSavedLocalDocuments));
   };
 
   const saveDocumentToList = (documentType, formData, documentId) => {
@@ -189,30 +201,50 @@ function App() {
   };
 
   const handleSavePurchaseDocument = async (payload, documentId) => {
-    const sanitizedItems = payload.items.map((item) => ({
-      content: item.content || '',
-      unit: item.unit || 'C�i',
+    const sanitizedItems = (payload.items || []).map((item) => ({
+      product: item.productId || item.product || null,
+      productName: item.productName || item.content || '',
+      content: item.content || item.productName || '',
+      unit: item.unit || 'Cái',
       quantity: Number(item.quantity || 0),
       unitPrice: Number(item.unitPrice || 0),
       note: item.note || '',
     }));
 
+    const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const suffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    const generatedCode = `DXMS-${dateKey}-${suffix}`;
+
+    const targetDoc = documents.find((doc) => doc.id === documentId);
+    const serverId = targetDoc?.data?._id || targetDoc?.data?.id;
+
     const requestBody = {
-      code: `DXMS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
+      code: payload.code || targetDoc?.data?.code || generatedCode,
       proposer: payload.proposer,
       department: payload.department,
       reason: payload.reason,
       date: payload.date,
       vatRate: Number(payload.vatRate || 0),
-      status: 'Pending',
+      status: payload.status || 'Pending',
       items: sanitizedItems,
     };
 
     try {
-      const response = await api.post('/purchase-proposals', requestBody);
+      let response;
+      if (serverId) {
+        response = await api.put(`/purchase-proposals/${serverId}`, requestBody);
+      } else {
+        response = await api.post('/purchase-proposals', requestBody);
+      }
+
       const savedDocument = response?.data?.data || { ...payload, items: sanitizedItems, code: requestBody.code };
-      saveDocumentToList('purchase', { ...payload, items: sanitizedItems, code: savedDocument.code || requestBody.code }, documentId);
-      addToast('�� luu phi?u d? xu?t mua s?m');
+      saveDocumentToList(
+        'purchase',
+        { ...payload, items: sanitizedItems, code: savedDocument.code || requestBody.code, _id: savedDocument._id || serverId },
+        documentId
+      );
+      addToast(serverId ? 'Đã cập nhật phiếu đề xuất mua sắm' : 'Đã lưu phiếu đề xuất mua sắm');
+      await fetchExistingDocuments();
       return true;
     } catch (error) {
       const message = error?.response?.data?.message || 'Không thể lưu phiếu đề xuất mua sắm.';
@@ -222,19 +254,24 @@ function App() {
   };
 
   const handleSaveHandoverDocument = async (payload, documentId) => {
-    const requestItems = payload.items.map((item) => ({
+    const requestItems = (payload.items || []).map((item) => ({
       product: item.productId || item.product || '',
       productId: item.productId || item.product || '',
       productName: item.productName || item.product || '',
-      unit: item.unit || 'C�i',
+      unit: item.unit || 'Cái',
       quantity: Number(item.quantity || 0),
       departmentUsage: item.departmentUsage || '',
       receiverSignature: payload.receiverName,
       note: item.note || '',
     }));
 
+    const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const suffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    const targetDoc = documents.find((doc) => doc.id === documentId);
+    const existingCode = payload.code || targetDoc?.data?.code;
+
     const requestBody = {
-      code: payload.code || `PBG-${Date.now().toString(36).toUpperCase()}`,
+      code: existingCode || `PBG-${dateKey}-${suffix}`,
       exportDate: payload.exportDate,
       receiverName: payload.receiverName,
       department: payload.department,
@@ -250,8 +287,13 @@ function App() {
       }
 
       const savedDocument = response?.data?.data || { ...payload, items: requestItems, code: requestBody.code };
-      saveDocumentToList('handover', { ...payload, items: requestItems, code: savedDocument.code || requestBody.code }, documentId);
-      addToast('�� luu phi?u b�n giao');
+      saveDocumentToList(
+        'handover',
+        { ...payload, items: requestItems, code: savedDocument.code || requestBody.code, _id: savedDocument._id },
+        documentId
+      );
+      addToast('Đã lưu phiếu bàn giao');
+      await fetchExistingDocuments();
       return true;
     } catch (error) {
       const message = error?.response?.data?.message || 'Không thể lưu phiếu bàn giao.';
@@ -263,7 +305,6 @@ function App() {
   const handleDeleteDocument = async (documentId) => {
     const targetDocument = documents.find((document) => document.id === documentId);
     const serverId = targetDocument?.data?._id || targetDocument?.data?.id;
-    const targetIdentity = getDocumentIdentity(targetDocument);
 
     if (targetDocument?.type === 'purchase' && serverId) {
       try {
@@ -289,16 +330,8 @@ function App() {
       }
     }
 
-    const matchingLocalDocuments = getSavedFormats().filter((document) => getDocumentIdentity(document) === targetIdentity);
-
-    if (matchingLocalDocuments.length) {
-      const nextDocuments = removeDocumentByIdentity(getSavedFormats(), targetIdentity);
-      persistSavedDocuments(nextDocuments);
-    } else {
-      removeDocumentFromList(documentId);
-    }
-
-    addToast('Đã xóa phiếu');
+    removeDocumentFromList(documentId);
+    addToast('Đã xóa phiếu thành công');
   };
 
   const handleEditDocument = (document) => {
@@ -385,7 +418,6 @@ function App() {
           <DocumentList
             documents={documents}
             onViewDocument={(document) => setEditingDocument(document)}
-            onEditDocument={handleEditDocument}
             onDeleteDocument={handleDeleteDocument}
             onRefreshDocuments={fetchExistingDocuments}
           />

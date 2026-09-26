@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Eye, PencilLine, Trash2 } from 'lucide-react';
+import { Download, Eye, RefreshCw, Trash2 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { buildDocumentPdfMarkup } from './PdfTemplates';
 
@@ -36,7 +36,7 @@ const getDocumentSummary = (document) => {
   };
 };
 
-export default function DocumentList({ documents, onViewDocument, onEditDocument, onDeleteDocument, onRefreshDocuments }) {
+export default function DocumentList({ documents, onViewDocument, onDeleteDocument, onRefreshDocuments }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState(null);
 
@@ -70,26 +70,40 @@ export default function DocumentList({ documents, onViewDocument, onEditDocument
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Danh sách phiếu đã lưu</h2>
-          <p className="text-sm text-slate-500">Quản lý, xem chi tiết, chỉnh sửa và xuất PDF</p>
+          <p className="text-sm text-slate-500">Quản lý, xem chi tiết và xuất PDF</p>
         </div>
 
-        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
-          {[
-            { key: 'all', label: 'Tất cả' },
-            { key: 'purchase', label: 'Đề xuất mua sắm' },
-            { key: 'handover', label: 'Phiếu bàn giao' },
-          ].map((tab) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {onRefreshDocuments ? (
             <button
-              key={tab.key}
               type="button"
-              onClick={() => setActiveFilter(tab.key)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                activeFilter === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600'
-              }`}
+              onClick={onRefreshDocuments}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+              title="Làm mới dữ liệu từ máy chủ"
             >
-              {tab.label}
+              <RefreshCw size={15} />
+              Làm mới
             </button>
-          ))}
+          ) : null}
+
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            {[
+              { key: 'all', label: 'Tất cả' },
+              { key: 'purchase', label: 'Đề xuất mua sắm' },
+              { key: 'handover', label: 'Phiếu bàn giao' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveFilter(tab.key)}
+                className={`rounded-lg px-4 py-2 text-sm font-medium ${
+                  activeFilter === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -141,14 +155,6 @@ export default function DocumentList({ documents, onViewDocument, onEditDocument
                         >
                           <Eye size={12} />
                           Xem
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onEditDocument(document)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700"
-                        >
-                          <PencilLine size={12} />
-                          Sửa
                         </button>
                         <button
                           type="button"

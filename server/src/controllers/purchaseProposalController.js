@@ -41,19 +41,20 @@ const normalizeProposalItems = async (items = []) => {
 };
 
 const saveProposalWithRetry = async (proposal, autoGenerateCode, session) => {
+  const codeGenerator = autoGenerateCode || generateProposalCode;
   let attempts = 0;
 
   while (attempts < 5) {
     try {
-      await proposal.save({ session });
+      await proposal.save(session ? { session } : undefined);
       return proposal;
     } catch (error) {
-      if (!isDuplicateKeyError(error) || !autoGenerateCode) {
+      if (!isDuplicateKeyError(error) || !codeGenerator) {
         throw error;
       }
 
       attempts += 1;
-      proposal.code = autoGenerateCode();
+      proposal.code = codeGenerator();
       proposal.proposalCode = proposal.code;
     }
   }
@@ -159,7 +160,7 @@ export const createPurchaseProposal = async (req, res, next) => {
     const vatRate = Number(payload.vatRate ?? 10);
     const vatAmount = Number((subtotal * (vatRate / 100)).toFixed(2));
     const totalPayment = Number((subtotal + vatAmount).toFixed(2));
-    const autoGenerateCode = !payload.code && !payload.proposalCode ? generateProposalCode : null;
+    const autoGenerateCode = generateProposalCode;
     const code = payload.code || payload.proposalCode || autoGenerateCode();
 
     const proposal = new PurchaseProposal({

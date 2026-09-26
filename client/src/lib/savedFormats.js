@@ -12,7 +12,7 @@ export const getSavedFormats = () => {
   }
 };
 
-const persistSavedFormats = (formats) => {
+export const persistSavedFormats = (formats) => {
   if (typeof window === 'undefined') return formats;
 
   try {
@@ -22,6 +22,16 @@ const persistSavedFormats = (formats) => {
   }
 
   return formats;
+};
+
+export const clearSavedFormats = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch (_error) {
+    // Ignore localStorage write errors.
+  }
+  return [];
 };
 
 export const upsertSavedFormat = ({ id, type, name, data }) => {
