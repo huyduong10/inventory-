@@ -17,22 +17,8 @@ console.log('CORS allowed origins:', allowedOrigins);
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      const normalizedOrigin = origin.replace(/\/+$/, '');
-      if (
-        allowedOrigins.includes('*') ||
-        allowedOrigins.includes(normalizedOrigin) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-      ) {
-        return callback(null, true);
-      }
-      console.log(`CORS blocked origin: ${origin}`);
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    },
+    origin: true,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma'],
   })
 );
 app.use((req, res, next) => {
