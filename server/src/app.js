@@ -10,23 +10,29 @@ import { errorHandler } from './middleware/errorHandler.js';
 const app = express();
 
 const allowedOrigins = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL.split(',').map((url) => url.trim())
+  ? process.env.CLIENT_URL.split(',').map((url) => url.trim().replace(/\/+$/, ''))
   : ['*'];
+
+console.log('CORS allowed origins:', allowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
+      const normalizedOrigin = origin.replace(/\/+$/, '');
       if (
         allowedOrigins.includes('*') ||
-        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes(normalizedOrigin) ||
         /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
       ) {
         return callback(null, true);
       }
+      console.log(`CORS blocked origin: ${origin}`);
       callback(new Error(`Origin ${origin} not allowed by CORS`));
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 app.use((req, res, next) => {
