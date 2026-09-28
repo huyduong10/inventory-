@@ -8,8 +8,40 @@ const documentTypeLabels = {
   handover: 'Phiếu bàn giao',
 };
 
+const DEPARTMENTS = [
+  'Kế toán',
+  'Hành chính nhân sự',
+  'Thu mua',
+  'IT',
+  'Ban Giám đốc',
+  'Quản lí dự án',
+];
+
+const ABBR_TO_DEPT = {
+  KT: 'Kế toán',
+  HCNS: 'Hành chính nhân sự',
+  TM: 'Thu mua',
+  IT: 'IT',
+  BGĐ: 'Ban Giám đốc',
+  QLDA: 'Quản lí dự án',
+};
+
+// Resolve department from stored field OR infer from code like "092026/ĐXMS-IT"
+const resolveDepartment = (document) => {
+  const stored = document?.data?.department;
+  if (stored) return stored;
+  const code = document?.data?.code || '';
+  const match = code.match(/\/ĐXMS-([A-ZĐÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬ]+)$/i);
+  if (match) {
+    const abbr = match[1].toUpperCase();
+    return ABBR_TO_DEPT[abbr] || abbr;
+  }
+  return '';
+};
+
 const formatMoney = (value) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(value || 0));
+
 
 const getDocumentSummary = (document) => {
   const data = document?.data || {};
@@ -38,12 +70,15 @@ const getDocumentSummary = (document) => {
 
 export default function DocumentList({ documents, onViewDocument, onDeleteDocument, onRefreshDocuments }) {
   const [activeFilter, setActiveFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState(null);
 
   const filteredDocuments = useMemo(() => {
-    if (activeFilter === 'all') return documents;
-    return documents.filter((document) => document.type === activeFilter);
-  }, [documents, activeFilter]);
+    let result = documents;
+    if (activeFilter !== 'all') result = result.filter((document) => document.type === activeFilter);
+    if (departmentFilter !== 'all') result = result.filter((document) => resolveDepartment(document) === departmentFilter);
+    return result;
+  }, [documents, activeFilter, departmentFilter]);
 
   const handleExportPdf = (docItem) => {
     const element = window.document.createElement('div');
@@ -85,6 +120,17 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
               Làm mới
             </button>
           ) : null}
+
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition hover:bg-slate-50"
+          >
+            <option value="all">Tất cả phòng ban</option>
+            {DEPARTMENTS.map((dept) => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
 
           <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
             {[

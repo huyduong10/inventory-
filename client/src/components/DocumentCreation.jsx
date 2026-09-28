@@ -3,7 +3,22 @@ import { PackagePlus, Plus, Trash2 } from 'lucide-react';
 
 const COMPANY_NAME = 'CÔNG TY TNHH TIẾN ANH';
 
-const generateHandoverCode = () => `PBG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+const DEPARTMENT_ABBR = {
+  'Kế toán': 'KT',
+  'Hành chính nhân sự': 'HCNS',
+  'Thu mua': 'TM',
+  'IT': 'IT',
+  'Ban Giám đốc': 'BGĐ',
+  'Quản lí dự án': 'QLDA',
+};
+
+const generateHandoverCode = (department = 'IT') => {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const tag = DEPARTMENT_ABBR[department] || department;
+  return `${month}${year}/ĐXMS-${tag}`;
+};
 
 const initialPurchaseItems = [
   { id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' },
@@ -79,7 +94,7 @@ export default function DocumentCreation({
   });
   const [handoverForm, setHandoverForm] = useState({
     name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-    code: generateHandoverCode(),
+    code: generateHandoverCode('IT'),
     exportDate: new Date().toISOString().slice(0, 10),
     receiverName: 'Anh Hùng',
     department: 'IT',
@@ -117,7 +132,7 @@ export default function DocumentCreation({
     setActiveTab('handover');
     setHandoverForm({
       name: documentData.name || `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-      code: documentData.code || generateHandoverCode(),
+      code: documentData.code || generateHandoverCode(documentData.department || 'IT'),
       exportDate: documentData.exportDate || new Date().toISOString().slice(0, 10),
       receiverName: documentData.receiverName || 'Anh Hùng',
       department: documentData.department || 'IT',
@@ -271,7 +286,7 @@ export default function DocumentCreation({
     onSaveHandoverDocument(payload, editingDocument?.id);
     setHandoverForm({
       name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-      code: generateHandoverCode(),
+      code: generateHandoverCode('IT'),
       exportDate: new Date().toISOString().slice(0, 10),
       receiverName: 'Anh Hùng',
       department: 'IT',
@@ -358,7 +373,7 @@ export default function DocumentCreation({
                 onChange={(event) => setPurchaseForm({ ...purchaseForm, department: event.target.value })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none"
               >
-                {['Kế toán', 'Nhân sự', 'Marketing', 'IT', 'Ban Giám đốc'].map((department) => (
+                {['Kế toán', 'Hành chính nhân sự', 'Thu mua', 'IT', 'Ban Giám đốc', 'Quản lí dự án'].map((department) => (
                   <option key={department} value={department}>{department}</option>
                 ))}
               </select>
@@ -518,10 +533,10 @@ export default function DocumentCreation({
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Phòng ban</label>
               <select
                 value={handoverForm.department}
-                onChange={(event) => setHandoverForm({ ...handoverForm, department: event.target.value })}
+                onChange={(event) => setHandoverForm({ ...handoverForm, department: event.target.value, code: generateHandoverCode(event.target.value) })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none"
               >
-                {['Kế toán', 'Nhân sự', 'Marketing', 'IT', 'Ban Giám đốc'].map((department) => (
+                {['Kế toán', 'Hành chính nhân sự', 'Thu mua', 'IT', 'Ban Giám đốc', 'Quản lí dự án'].map((department) => (
                   <option key={department} value={department}>{department}</option>
                 ))}
               </select>

@@ -83,6 +83,16 @@ const HandoverNoteSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    department: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    receiverName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     items: {
       type: [HandoverItemSchema],
       validate: {
