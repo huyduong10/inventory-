@@ -70,7 +70,6 @@ const HandoverNoteSchema = new mongoose.Schema(
     code: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       index: true,
     },
@@ -132,5 +131,8 @@ HandoverNoteSchema.pre('save', function (next) {
 });
 
 const HandoverNote = mongoose.model('HandoverNote', HandoverNoteSchema);
+
+// Drop legacy unique index if it was previously created
+HandoverNote.collection?.dropIndex('code_1').catch(() => {});
 
 export default HandoverNote;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Eye, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Trash2 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { buildDocumentPdfMarkup } from './PdfTemplates';
 
@@ -68,10 +68,13 @@ const getDocumentSummary = (document) => {
   };
 };
 
+const PAGE_SIZE = 5;
+
 export default function DocumentList({ documents, onViewDocument, onDeleteDocument, onRefreshDocuments }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filteredDocuments = useMemo(() => {
     let result = documents;
@@ -79,6 +82,20 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
     if (departmentFilter !== 'all') result = result.filter((document) => resolveDepartment(document) === departmentFilter);
     return result;
   }, [documents, activeFilter, departmentFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const visibleDocuments = filteredDocuments.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const handleActiveFilterChange = (key) => {
+    setActiveFilter(key);
+    setCurrentPage(1);
+  };
+
+  const handleDepartmentFilterChange = (dept) => {
+    setDepartmentFilter(dept);
+    setCurrentPage(1);
+  };
 
   const handleExportPdf = (docItem) => {
     const element = window.document.createElement('div');
@@ -123,7 +140,7 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
 
           <select
             value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
+            onChange={(e) => handleDepartmentFilterChange(e.target.value)}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition hover:bg-slate-50"
           >
             <option value="all">Tất cả phòng ban</option>
@@ -141,7 +158,7 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveFilter(tab.key)}
+                onClick={() => handleActiveFilterChange(tab.key)}
                 className={`rounded-lg px-4 py-2 text-sm font-medium ${
                   activeFilter === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600'
                 }`}
@@ -160,23 +177,24 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
               <th className="px-4 py-3 font-medium text-slate-700">STT</th>
               <th className="px-4 py-3 font-medium text-slate-700">Mã phiếu</th>
               <th className="px-4 py-3 font-medium text-slate-700">Loại phiếu</th>
-              <th className="px-4 py-3 font-medium text-slate-700">Người lập / Phòng ban</th>
+              <th className="px-4 py-3 font-medium text-slate-700">Người/Phòng ban</th>
               <th className="px-4 py-3 font-medium text-slate-700">Ngày tạo</th>
               <th className="px-4 py-3 font-medium text-slate-700">Tổng số mục / Tổng tiền</th>
               <th className="px-4 py-3 font-medium text-slate-700">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">
-            {filteredDocuments.length ? (
-              filteredDocuments.map((document, index) => {
+            {visibleDocuments.length ? (
+              visibleDocuments.map((document, index) => {
                 const summary = getDocumentSummary(document);
                 const label = document.data?.code || document.name || `Phiếu ${index + 1}`;
                 const responsible = document.type === 'purchase' ? document.data?.proposer || '---' : document.data?.receiverName || '---';
-                const department = document.data?.department || '---';
+                const department = document.data?.department || resolveDepartment(document) || '---';
+                const itemIndex = (safePage - 1) * PAGE_SIZE + index + 1;
 
                 return (
                   <tr key={document.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">{index + 1}</td>
+                    <td className="px-4 py-3">{itemIndex}</td>
                     <td className="px-4 py-3 font-medium text-slate-700">{label}</td>
                     <td className="px-4 py-3 text-slate-600">{documentTypeLabels[document.type] || document.type}</td>
                     <td className="px-4 py-3">
@@ -233,6 +251,54 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
           </tbody>
         </table>
       </div>
+
+      {filteredDocuments.length > 0 && (
+        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-slate-600">
+            Trang {safePage} / {totalPages} (Tổng {filteredDocuments.length} phiếu • Hiển thị 5 phiếu/trang)
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={safePage === 1}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft size={14} />
+              Trước
+            </button>
+
+            {[...Array(totalPages)].map((_, index) => {
+              const pageNumber = index + 1;
+              const isActive = pageNumber === safePage;
+
+              return (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNumber)}
+                  className={`h-9 min-w-9 rounded-lg px-2 text-sm font-medium transition ${
+                    isActive ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={safePage === totalPages}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Sau
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {selectedDocument ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 p-4">

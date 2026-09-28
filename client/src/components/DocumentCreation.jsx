@@ -89,7 +89,7 @@ export default function DocumentCreation({
     department: 'IT',
     reason: 'Cấp phát vật tư cho hoạt động hàng ngày của phòng IT.',
     date: new Date().toISOString().slice(0, 10),
-    vatRate: 10,
+    vatRate: 0,
     items: initialPurchaseItems,
   });
   const [handoverForm, setHandoverForm] = useState({
@@ -114,7 +114,7 @@ export default function DocumentCreation({
         department: documentData.department || 'IT',
         reason: documentData.reason || '',
         date: documentData.date || new Date().toISOString().slice(0, 10),
-        vatRate: Number(documentData.vatRate || 10),
+        vatRate: Number(documentData.vatRate || 0),
         items: Array.isArray(documentData.items) && documentData.items.length
           ? documentData.items.map((item, index) => ({
               id: item.id || `${Date.now()}-${index}`,
@@ -254,7 +254,7 @@ export default function DocumentCreation({
       department: 'IT',
       reason: 'Cấp phát vật tư cho hoạt động hàng ngày của phòng IT.',
       date: new Date().toISOString().slice(0, 10),
-      vatRate: 10,
+      vatRate: 0,
       items: [{ id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
     });
   };
@@ -477,10 +477,8 @@ export default function DocumentCreation({
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex justify-between text-sm"><span>Tổng cộng</span><span>{formatMoney(purchaseSummary.subtotal)}</span></div>
-            <div className="mt-2 flex justify-between text-sm"><span>VAT ({purchaseForm.vatRate}%)</span><span>{formatMoney(purchaseSummary.vatAmount)}</span></div>
-            <div className="mt-2 flex justify-between text-sm font-semibold"><span>Tổng thanh toán</span><span>{formatMoney(purchaseSummary.totalPayment)}</span></div>
-            <p className="mt-3 text-xs italic text-slate-600">Số tiền bằng chữ: {numberToVietnameseWords(purchaseSummary.totalPayment)} đồng</p>
+            <div className="flex justify-between text-sm font-semibold"><span>Tổng thanh toán</span><span>{formatMoney(purchaseSummary.totalPayment)}</span></div>
+            <p className="mt-2 text-xs italic text-slate-600">Số tiền bằng chữ: {numberToVietnameseWords(purchaseSummary.totalPayment)} đồng</p>
           </div>
 
           <button type="button" onClick={handleSavePurchase} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white">

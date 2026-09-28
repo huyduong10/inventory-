@@ -202,9 +202,13 @@ export const buildDocumentPdfMarkup = (doc) => {
             </table>
 
             <div class="summary-box">
-              <div class="summary-row"><span><strong>Tổng cộng</strong></span><span>${escapeHtml(formatMoney(subtotal))}</span></div>
-              <div class="summary-row"><span><strong>VAT (${escapeHtml(Number(data.vatRate || 0))}%)</strong></span><span>${escapeHtml(formatMoney(vatAmount))}</span></div>
-              <div class="summary-row"><span><strong>Thanh toán</strong></span><span>${escapeHtml(formatMoney(totalPayment))}</span></div>
+              ${vatRate > 0 ? `
+                <div class="summary-row"><span><strong>Tổng cộng</strong></span><span>${escapeHtml(formatMoney(subtotal))}</span></div>
+                <div class="summary-row"><span><strong>VAT (${escapeHtml(Number(data.vatRate || 0))}%)</strong></span><span>${escapeHtml(formatMoney(vatAmount))}</span></div>
+                <div class="summary-row"><span><strong>Thanh toán</strong></span><span>${escapeHtml(formatMoney(totalPayment))}</span></div>
+              ` : `
+                <div class="summary-row"><span><strong>Tổng thanh toán</strong></span><span>${escapeHtml(formatMoney(totalPayment))}</span></div>
+              `}
             </div>
             <div class="amount-words">Số tiền bằng chữ: ${escapeHtml(amountText)} đồng</div>
             <div class="date-line">Ngày ... tháng ... năm ...</div>

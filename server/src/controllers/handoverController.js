@@ -1,7 +1,34 @@
 import mongoose from 'mongoose';
 import HandoverNote from '../models/HandoverNote.js';
 import Product from '../models/Product.js';
-import { generateHandoverCode, isDuplicateKeyError } from '../utils/codeGenerators.js';
+import { DEPARTMENT_ABBR, generateHandoverCode, isDuplicateKeyError } from '../utils/codeGenerators.js';
+
+let pbgMigrationDone = false;
+const migratePbgNotes = async () => {
+  if (pbgMigrationDone) return;
+  try {
+    pbgMigrationDone = true;
+    const notes = await HandoverNote.find({
+      $or: [
+        { code: { $regex: '^PBG-', $options: 'i' } },
+        { noteCode: { $regex: '^PBG-', $options: 'i' } },
+      ],
+    });
+    for (const note of notes) {
+      const d = note.exportDate || note.createdAt || new Date();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const dept = note.department || '';
+      const tag = DEPARTMENT_ABBR[dept] || dept || 'BGĐ';
+      const cleanCode = `${month}${year}/ĐXMS-${tag}`;
+      note.code = cleanCode;
+      note.noteCode = cleanCode;
+      await note.save().catch(() => {});
+    }
+  } catch (_e) {
+    // ignore migration error
+  }
+};
 
 const parseDepartmentUsage = (departmentUsage, fallbackQuantity) => {
   if (!departmentUsage) return [];
@@ -162,7 +189,7 @@ const validateAndDecrementStock = async (items, session) => {
 };
 
 const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
-  const codeGenerator = autoGenerateCode || generateHandoverCode;
+  const codeGenerator = autoGenerateCode || (() => generateHandoverCode(note.department || 'IT'));
   let attempts = 0;
 
   while (attempts < 5) {
@@ -175,7 +202,7 @@ const saveHandoverWithRetry = async (note, autoGenerateCode, session) => {
       }
 
       attempts += 1;
-      note.code = codeGenerator();
+      note.code = generateHandoverCode(note.department || 'IT', String(attempts + 1));
       note.noteCode = note.code;
     }
   }
@@ -236,6 +263,7 @@ const buildHandoverItem = async (item) => {
 
 export const getHandoverNotes = async (req, res, next) => {
   try {
+    await migratePbgNotes();
     const { status, department, search = '', page = 1, limit = 10 } = req.query;
     const filter = {};
 
@@ -324,7 +352,7 @@ export const createHandoverNote = async (req, res, next) => {
     }
 
     const normalizedItems = await Promise.all(items.map((item) => buildHandoverItem(item)));
-    const autoGenerateCode = !payload.code && !payload.noteCode ? generateHandoverCode : generateHandoverCode;
+    const autoGenerateCode = () => generateHandoverCode(payload.department || 'IT');
     const note = new HandoverNote({
       ...payload,
       code: payload.code || payload.noteCode || autoGenerateCode(),

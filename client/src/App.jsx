@@ -30,14 +30,49 @@ const documentTabs = [
   { key: 'documents', label: 'Danh sách phiếu lưu trữ', icon: FolderOpen },
 ];
 
-const normalizeServerDocument = (record, type) => ({
-  id: record?._id || record?.id || record?.code || record?.noteCode || record?.proposalCode || `${type}-${Date.now()}`,
-  type,
-  name: record?.name || record?.code || record?.noteCode || record?.proposalCode || 'Phiếu lưu trữ',
-  data: record,
-  createdAt: record?.createdAt || record?.updatedAt || new Date().toISOString(),
-  updatedAt: record?.updatedAt || record?.createdAt || new Date().toISOString(),
-});
+const DEPARTMENT_ABBR = {
+  'Kế toán': 'KT',
+  'Hành chính nhân sự': 'HCNS',
+  'Thu mua': 'TM',
+  'IT': 'IT',
+  'Ban Giám đốc': 'BGĐ',
+  'Quản lí dự án': 'QLDA',
+};
+
+const generateHandoverCode = (department = 'IT') => {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const tag = DEPARTMENT_ABBR[department] || department || 'IT';
+  return `${month}${year}/ĐXMS-${tag}`;
+};
+
+const normalizeDocCode = (doc) => {
+  if (!doc) return doc;
+  const c = doc.data?.code || '';
+  if (/^PBG-/i.test(c)) {
+    const dept = doc.data?.department || '';
+    const cleanCode = generateHandoverCode(dept);
+    return {
+      ...doc,
+      name: doc.name === c ? cleanCode : doc.name,
+      data: { ...doc.data, code: cleanCode },
+    };
+  }
+  return doc;
+};
+
+const normalizeServerDocument = (record, type) => {
+  const doc = {
+    id: record?._id || record?.id || record?.code || record?.noteCode || record?.proposalCode || `${type}-${Date.now()}`,
+    type,
+    name: record?.name || record?.code || record?.noteCode || record?.proposalCode || 'Phiếu lưu trữ',
+    data: record,
+    createdAt: record?.createdAt || record?.updatedAt || new Date().toISOString(),
+    updatedAt: record?.updatedAt || record?.createdAt || new Date().toISOString(),
+  };
+  return type === 'handover' ? normalizeDocCode(doc) : doc;
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState('warehouse');
@@ -79,7 +114,7 @@ function App() {
       // If a document was synced to server (has _id or standard document code) but is no longer on server,
       // it was deleted from MongoDB and must be purged from localStorage.
       const serverIdentities = new Set(serverDocuments.map(getDocumentIdentity).filter(Boolean));
-      const currentSaved = getSavedFormats();
+      const currentSaved = getSavedFormats().map(normalizeDocCode);
       const updatedSaved = currentSaved.filter((doc) => {
         const identity = getDocumentIdentity(doc);
         const isServerBacked = Boolean(doc?.data?._id || doc?._id || (doc?.data?.code && /^(DXMS|PBG)-/i.test(doc.data.code)));
@@ -265,13 +300,11 @@ function App() {
       note: item.note || '',
     }));
 
-    const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const suffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
     const targetDoc = documents.find((doc) => doc.id === documentId);
     const existingCode = payload.code || targetDoc?.data?.code;
 
     const requestBody = {
-      code: existingCode || `PBG-${dateKey}-${suffix}`,
+      code: existingCode || generateHandoverCode(payload.department),
       exportDate: payload.exportDate,
       receiverName: payload.receiverName,
       department: payload.department,
