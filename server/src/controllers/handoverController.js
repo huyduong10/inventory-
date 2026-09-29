@@ -412,6 +412,121 @@ export const updateHandoverNoteStatus = async (req, res, next) => {
   }
 };
 
+export const updateHandoverNote = async (req, res, next) => {
+  try {
+    const payload = req.body || {};
+    const note = await HandoverNote.findById(req.params.id);
+
+    if (!note) {
+      return res.status(404).json({ success: false, message: 'Handover note not found.' });
+    }
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (items.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one handover item is required.' });
+    }
+
+    // Map old items by product ID
+    const oldQtyMap = new Map();
+    for (const item of note.items || []) {
+      const p = await resolveProductReference(item.product);
+      if (p) {
+        const key = String(p._id);
+        oldQtyMap.set(key, (oldQtyMap.get(key) || 0) + Number(item.quantity || 0));
+      }
+    }
+
+    // Resolve and map new items by product ID
+    const newQtyMap = new Map();
+    const resolvedProductMap = new Map();
+    for (const item of items) {
+      const ref = item.product || item.productId;
+      if (!ref) {
+        return res.status(400).json({ success: false, message: 'Mỗi dòng phiếu bàn giao phải có mã sản phẩm.' });
+      }
+      const p = await resolveProductReference(ref);
+      if (!p) {
+        return res.status(400).json({ success: false, message: `Sản phẩm ${String(ref)} không tồn tại.` });
+      }
+      const key = String(p._id);
+      resolvedProductMap.set(key, p);
+      newQtyMap.set(key, (newQtyMap.get(key) || 0) + Number(item.quantity || 0));
+    }
+
+    const isCompleted = (payload.status || note.status) === 'Completed';
+
+    // Check stock availability if note is Completed
+    if (isCompleted) {
+      for (const [productId, newQty] of newQtyMap.entries()) {
+        const oldQty = note.status === 'Completed' ? (oldQtyMap.get(productId) || 0) : 0;
+        const delta = newQty - oldQty;
+        if (delta > 0) {
+          const product = resolvedProductMap.get(productId) || (await Product.findById(productId));
+          if (!product || Number(product.quantity || 0) < delta) {
+            return res.status(400).json({
+              success: false,
+              message: `Sản phẩm ${product?.name || productId} chỉ còn ${product?.quantity || 0} ${product?.unit || 'Cái'}, không đủ để xuất thêm ${delta}!`,
+            });
+          }
+        }
+      }
+
+      // Apply warehouse adjustments:
+      // In Handover: when note quantity increases by delta, warehouse stock DECREASES by delta.
+      // When note quantity decreases by delta, warehouse stock INCREASES by |delta|.
+      const allProductIds = new Set([
+        ...(note.status === 'Completed' ? oldQtyMap.keys() : []),
+        ...newQtyMap.keys(),
+      ]);
+
+      for (const productId of allProductIds) {
+        const oldQty = note.status === 'Completed' ? (oldQtyMap.get(productId) || 0) : 0;
+        const newQty = newQtyMap.get(productId) || 0;
+        const delta = newQty - oldQty;
+
+        if (delta !== 0) {
+          const product = await Product.findById(productId);
+          if (product) {
+            const prevQty = Number(product.quantity || 0);
+            const nextQty = Math.max(0, prevQty - delta);
+            product.quantity = nextQty;
+            product.adjustmentHistory = [
+              {
+                reason: `Chỉnh sửa phiếu bàn giao: ${payload.code || note.code}`,
+                previousQuantity: prevQty,
+                newQuantity: nextQty,
+                delta: -delta,
+                adjustedBy: req.user?.name || payload.receiverName || 'system',
+                createdAt: new Date(),
+              },
+              ...(product.adjustmentHistory || []),
+            ];
+            await product.save();
+          }
+        }
+      }
+    }
+
+    // Build normalized items
+    const normalizedItems = await Promise.all(items.map((item) => buildHandoverItem(item)));
+
+    note.code = payload.code || note.code;
+    note.noteCode = note.code;
+    note.exportDate = payload.exportDate || note.exportDate;
+    note.receiverName = payload.receiverName || note.receiverName;
+    note.department = payload.department || note.department;
+    if (payload.status) note.status = normalizeHandoverStatus(payload.status, note.status);
+    note.items = normalizedItems;
+
+    await note.save();
+
+    const updatedNote = await HandoverNote.findById(note._id).populate('items.product', 'name sku unit quantity');
+    res.json({ success: true, data: updatedNote, message: 'Cập nhật phiếu bàn giao thành công.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteHandoverNote = async (req, res, next) => {
   try {
     const note = await HandoverNote.findById(req.params.id);

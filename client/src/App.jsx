@@ -273,12 +273,39 @@ function App() {
       }
 
       const savedDocument = response?.data?.data || { ...payload, items: sanitizedItems, code: requestBody.code };
+      const newProducts = response?.data?.newProducts || [];
+      const updatedProducts = response?.data?.updatedProducts || [];
+
+      // Save document to list (this sets activeTab to 'documents' internally)
       saveDocumentToList(
         'purchase',
         { ...payload, items: sanitizedItems, code: savedDocument.code || requestBody.code, _id: savedDocument._id || serverId },
         documentId
       );
-      addToast(serverId ? 'Đã cập nhật phiếu đề xuất mua sắm' : 'Đã lưu phiếu đề xuất mua sắm');
+
+      // Refresh products to pick up any auto-created or updated products
+      await fetchProducts();
+
+      // Clear editing state
+      setEditingDocument(null);
+
+      // Redirect to warehouse tab so user can see the products
+      setActiveTab('warehouse');
+
+      const messages = [];
+      if (newProducts.length > 0) {
+        messages.push(`thêm ${newProducts.length} sản phẩm mới (${newProducts.map((p) => p.name).join(', ')})`);
+      }
+      if (updatedProducts.length > 0) {
+        messages.push(`cộng dồn tồn kho cho ${updatedProducts.length} sản phẩm có sẵn (${updatedProducts.map((p) => p.name).join(', ')})`);
+      }
+
+      if (messages.length > 0) {
+        addToast(`Đã lưu phiếu đề xuất và ${messages.join(', ')}`);
+      } else {
+        addToast(serverId ? 'Đã cập nhật phiếu đề xuất mua sắm' : 'Đã lưu phiếu đề xuất mua sắm');
+      }
+
       await fetchExistingDocuments();
       return true;
     } catch (error) {
@@ -302,6 +329,7 @@ function App() {
 
     const targetDoc = documents.find((doc) => doc.id === documentId);
     const existingCode = payload.code || targetDoc?.data?.code;
+    const serverId = targetDoc?.data?._id || targetDoc?._id;
 
     const requestBody = {
       code: existingCode || generateHandoverCode(payload.department),
@@ -313,20 +341,25 @@ function App() {
     };
 
     try {
-      const response = await api.post('/handover-notes', requestBody);
-
-      if (response?.status === 201 || response?.data?.success) {
-        await fetchProducts();
+      let response;
+      if (serverId) {
+        response = await api.put(`/handover-notes/${serverId}`, requestBody);
+      } else {
+        response = await api.post('/handover-notes', requestBody);
       }
+
+      await fetchProducts();
 
       const savedDocument = response?.data?.data || { ...payload, items: requestItems, code: requestBody.code };
       saveDocumentToList(
         'handover',
-        { ...payload, items: requestItems, code: savedDocument.code || requestBody.code, _id: savedDocument._id },
+        { ...payload, items: requestItems, code: savedDocument.code || requestBody.code, _id: savedDocument._id || serverId },
         documentId
       );
-      addToast('Đã lưu phiếu bàn giao');
+      setEditingDocument(null);
+      addToast(serverId ? 'Đã cập nhật phiếu bàn giao thành công' : 'Đã lưu phiếu bàn giao');
       await fetchExistingDocuments();
+      setActiveTab('warehouse');
       return true;
     } catch (error) {
       const message = error?.response?.data?.message || 'Không thể lưu phiếu bàn giao.';
@@ -442,6 +475,7 @@ function App() {
           <DocumentCreation
             products={products}
             editingDocument={editingDocument}
+            onCancelEdit={() => setEditingDocument(null)}
             onSavePurchaseDocument={handleSavePurchaseDocument}
             onSaveHandoverDocument={handleSaveHandoverDocument}
           />
@@ -450,7 +484,7 @@ function App() {
         {activeTab === 'documents' ? (
           <DocumentList
             documents={documents}
-            onViewDocument={(document) => setEditingDocument(document)}
+            onEditDocument={handleEditDocument}
             onDeleteDocument={handleDeleteDocument}
             onRefreshDocuments={fetchExistingDocuments}
           />

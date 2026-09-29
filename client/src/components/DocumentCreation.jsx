@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PackagePlus, Plus, Trash2 } from 'lucide-react';
+import { Edit3, PackagePlus, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 
 const COMPANY_NAME = 'CÔNG TY TNHH TIẾN ANH';
 
@@ -79,11 +79,13 @@ const formatMoney = (value) =>
 export default function DocumentCreation({
   products,
   editingDocument,
+  onCancelEdit,
   onSavePurchaseDocument,
   onSaveHandoverDocument,
 }) {
   const [activeTab, setActiveTab] = useState('purchase');
   const [purchaseForm, setPurchaseForm] = useState({
+    code: '',
     name: `Đề xuất mua sắm ${new Date().toLocaleDateString('vi-VN')}`,
     proposer: 'Nguyễn Văn A',
     department: 'IT',
@@ -102,23 +104,45 @@ export default function DocumentCreation({
   });
 
   useEffect(() => {
-    if (!editingDocument) return;
+    if (!editingDocument) {
+      setPurchaseForm({
+        code: '',
+        name: `Đề xuất mua sắm ${new Date().toLocaleDateString('vi-VN')}`,
+        proposer: 'Nguyễn Văn A',
+        department: 'IT',
+        reason: 'Cấp phát vật tư cho hoạt động hàng ngày của phòng IT.',
+        date: new Date().toISOString().slice(0, 10),
+        vatRate: 0,
+        items: [{ id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
+      });
+      setHandoverForm({
+        name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
+        code: generateHandoverCode('IT'),
+        exportDate: new Date().toISOString().slice(0, 10),
+        receiverName: 'Anh Hùng',
+        department: 'IT',
+        items: [{ id: Date.now(), product: '', productId: '', unit: 'Cái', quantity: 1, departmentUsage: '', note: '' }],
+      });
+      return;
+    }
 
     const documentData = editingDocument.data || {};
 
     if (editingDocument.type === 'purchase') {
       setActiveTab('purchase');
       setPurchaseForm({
+        code: documentData.code || documentData.proposalCode || '',
         name: documentData.name || `Đề xuất mua sắm ${new Date().toLocaleDateString('vi-VN')}`,
         proposer: documentData.proposer || 'Nguyễn Văn A',
         department: documentData.department || 'IT',
         reason: documentData.reason || '',
-        date: documentData.date || new Date().toISOString().slice(0, 10),
+        date: documentData.date ? new Date(documentData.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
         vatRate: Number(documentData.vatRate || 0),
         items: Array.isArray(documentData.items) && documentData.items.length
           ? documentData.items.map((item, index) => ({
               id: item.id || `${Date.now()}-${index}`,
-              content: item.content || '',
+              content: item.content || item.productName || '',
+              productName: item.productName || item.content || '',
               unit: item.unit || 'Cái',
               quantity: Number(item.quantity || 0),
               unitPrice: Number(item.unitPrice || 0),
@@ -132,15 +156,15 @@ export default function DocumentCreation({
     setActiveTab('handover');
     setHandoverForm({
       name: documentData.name || `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
-      code: documentData.code || generateHandoverCode(documentData.department || 'IT'),
-      exportDate: documentData.exportDate || new Date().toISOString().slice(0, 10),
+      code: documentData.code || documentData.noteCode || generateHandoverCode(documentData.department || 'IT'),
+      exportDate: documentData.exportDate ? new Date(documentData.exportDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       receiverName: documentData.receiverName || 'Anh Hùng',
       department: documentData.department || 'IT',
       items: Array.isArray(documentData.items) && documentData.items.length
         ? documentData.items.map((item, index) => ({
             id: item.id || `${Date.now()}-${index}`,
             product: item.productName || item.product || '',
-            productId: item.productId || '',
+            productId: item.productId || item.product || '',
             unit: item.unit || 'Cái',
             quantity: Number(item.quantity || 0),
             departmentUsage: item.departmentUsage || '',
@@ -231,6 +255,7 @@ export default function DocumentCreation({
     }
 
     const payload = {
+      code: purchaseForm.code?.trim(),
       name: purchaseForm.name.trim() || `Đề xuất mua sắm ${new Date().toLocaleDateString('vi-VN')}`,
       proposer: purchaseForm.proposer,
       department: purchaseForm.department,
@@ -240,6 +265,7 @@ export default function DocumentCreation({
       items: purchaseForm.items.map((item) => ({
         id: item.id,
         content: item.content,
+        productName: item.content,
         unit: item.unit,
         quantity: Number(item.quantity || 0),
         unitPrice: Number(item.unitPrice || 0),
@@ -249,6 +275,7 @@ export default function DocumentCreation({
 
     onSavePurchaseDocument(payload, editingDocument?.id);
     setPurchaseForm({
+      code: '',
       name: `Đề xuất mua sắm ${new Date().toLocaleDateString('vi-VN')}`,
       proposer: 'Nguyễn Văn A',
       department: 'IT',
@@ -296,18 +323,48 @@ export default function DocumentCreation({
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {editingDocument && (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-amber-200 p-2 text-amber-800">
+              <Edit3 size={18} />
+            </div>
+            <div>
+              <h4 className="font-semibold text-amber-900">
+                Đang chỉnh sửa: {editingDocument.data?.code || editingDocument.name || 'Phiếu'}
+              </h4>
+              <p className="text-xs text-amber-700">
+                Loại: {editingDocument.type === 'purchase' ? 'Đề xuất mua sắm' : 'Phiếu bàn giao'} • Bạn có thể chỉnh sửa mã phiếu, loại phiếu, người phụ trách, ngày lập và danh sách sản phẩm.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 shadow-sm hover:bg-amber-100 transition-colors"
+          >
+            <X size={14} />
+            Hủy sửa / Tạo phiếu mới
+          </button>
+        </div>
+      )}
+
       <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">Tạo phiếu mới</h2>
-          <p className="text-sm text-slate-500">Nhập và lưu các loại bảng biểu trong hệ thống quản lý</p>
+          <h2 className="text-xl font-semibold text-slate-900">
+            {editingDocument ? 'Chỉnh sửa phiếu' : 'Tạo phiếu mới'}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {editingDocument ? 'Chỉnh sửa thông tin phiếu và cập nhật tồn kho kho hàng' : 'Nhập và lưu các loại bảng biểu trong hệ thống quản lý'}
+          </p>
         </div>
 
         <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
           <button
             type="button"
             onClick={() => setActiveTab('purchase')}
-            className={`rounded-lg px-4 py-2 text-sm font-medium ${
-              activeTab === 'purchase' ? 'bg-slate-900 text-white' : 'text-slate-600'
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'purchase' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             Đề xuất mua sắm
@@ -315,8 +372,8 @@ export default function DocumentCreation({
           <button
             type="button"
             onClick={() => setActiveTab('handover')}
-            className={`rounded-lg px-4 py-2 text-sm font-medium ${
-              activeTab === 'handover' ? 'bg-slate-900 text-white' : 'text-slate-600'
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'handover' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             Phiếu bàn giao
@@ -347,6 +404,15 @@ export default function DocumentCreation({
                 value={purchaseForm.name}
                 onChange={(event) => setPurchaseForm({ ...purchaseForm, name: event.target.value })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Mã phiếu</label>
+              <input
+                value={purchaseForm.code || ''}
+                placeholder="Tự động tạo nếu để trống (ví dụ: DXMS-...)"
+                onChange={(event) => setPurchaseForm({ ...purchaseForm, code: event.target.value })}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none font-mono text-sm"
               />
             </div>
             <div>
@@ -481,8 +547,8 @@ export default function DocumentCreation({
             <p className="mt-2 text-xs italic text-slate-600">Số tiền bằng chữ: {numberToVietnameseWords(purchaseSummary.totalPayment)} đồng</p>
           </div>
 
-          <button type="button" onClick={handleSavePurchase} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white">
-            Lưu phiếu
+          <button type="button" onClick={handleSavePurchase} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 transition-colors">
+            {editingDocument ? 'Cập nhật đề xuất mua sắm' : 'Lưu phiếu đề xuất'}
           </button>
         </div>
       ) : (
@@ -531,7 +597,7 @@ export default function DocumentCreation({
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Phòng ban</label>
               <select
                 value={handoverForm.department}
-                onChange={(event) => setHandoverForm({ ...handoverForm, department: event.target.value, code: generateHandoverCode(event.target.value) })}
+                onChange={(event) => setHandoverForm({ ...handoverForm, department: event.target.value, code: editingDocument ? handoverForm.code : generateHandoverCode(event.target.value) })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none"
               >
                 {['Kế toán', 'Hành chính nhân sự', 'Thu mua', 'IT', 'Ban Giám đốc', 'Quản lí dự án'].map((department) => (
@@ -624,8 +690,8 @@ export default function DocumentCreation({
             ))}
           </div>
 
-          <button type="button" onClick={handleSaveHandover} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white">
-            Lưu phiếu
+          <button type="button" onClick={handleSaveHandover} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 transition-colors">
+            {editingDocument ? 'Cập nhật phiếu bàn giao' : 'Lưu phiếu bàn giao'}
           </button>
         </div>
       )}

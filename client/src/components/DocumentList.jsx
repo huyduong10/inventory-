@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Edit, Eye, RefreshCw, Trash2 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { buildDocumentPdfMarkup } from './PdfTemplates';
 
@@ -70,7 +70,7 @@ const getDocumentSummary = (document) => {
 
 const PAGE_SIZE = 5;
 
-export default function DocumentList({ documents, onViewDocument, onDeleteDocument, onRefreshDocuments }) {
+export default function DocumentList({ documents, onViewDocument, onEditDocument, onDeleteDocument, onRefreshDocuments }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -215,15 +215,23 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
                         <button
                           type="button"
                           onClick={() => setSelectedDocument(document)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700"
+                          className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100 transition-colors"
                         >
                           <Eye size={12} />
                           Xem
                         </button>
                         <button
                           type="button"
+                          onClick={() => onEditDocument?.(document)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                          <Edit size={12} />
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleExportPdf(document)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
                         >
                           <Download size={12} />
                           Tải file PDF
@@ -231,7 +239,7 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
                         <button
                           type="button"
                           onClick={() => handleDelete(document)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700"
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 transition-colors"
                         >
                           <Trash2 size={12} />
                           Xóa
@@ -305,9 +313,23 @@ export default function DocumentList({ documents, onViewDocument, onDeleteDocume
           <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-slate-900">Chi tiết phiếu</h3>
-              <button type="button" onClick={() => setSelectedDocument(null)} className="text-sm text-slate-500">
-                Đóng
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const docToEdit = selectedDocument;
+                    setSelectedDocument(null);
+                    onEditDocument?.(docToEdit);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+                >
+                  <Edit size={12} />
+                  Sửa phiếu này
+                </button>
+                <button type="button" onClick={() => setSelectedDocument(null)} className="rounded-lg border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">
+                  Đóng
+                </button>
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

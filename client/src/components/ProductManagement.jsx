@@ -62,15 +62,32 @@ export default function ProductManagement({
     );
   }, [products]);
 
+const removeVietnameseTones = (str = '') => {
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+};
+
   const filteredProducts = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const rawSearch = search.trim().toLowerCase();
+    const normalizedSearch = removeVietnameseTones(rawSearch);
     const normalizedCategory = category.trim().toLowerCase();
 
     return products.filter((product) => {
+      const prodName = product.name?.toLowerCase() || '';
+      const prodSku = product.sku?.toLowerCase() || '';
+      const prodNameNorm = removeVietnameseTones(prodName);
+      const prodSkuNorm = removeVietnameseTones(prodSku);
+
       const matchesSearch =
-        !normalizedSearch ||
-        product.name?.toLowerCase().includes(normalizedSearch) ||
-        product.sku?.toLowerCase().includes(normalizedSearch);
+        !rawSearch ||
+        prodName.includes(rawSearch) ||
+        prodSku.includes(rawSearch) ||
+        prodNameNorm.includes(normalizedSearch) ||
+        prodSkuNorm.includes(normalizedSearch);
+
       const matchesCategory =
         category === 'all' ||
         product.category?.trim().toLowerCase() === normalizedCategory;
