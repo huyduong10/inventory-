@@ -13,6 +13,11 @@ const PurchaseProposalItemSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    sku: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     content: {
       type: String,
       default: '',

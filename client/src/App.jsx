@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Boxes, FileText, FolderOpen, Warehouse } from 'lucide-react';
+import { Boxes, ClipboardList, FileText, FolderOpen, Warehouse } from 'lucide-react';
 import { api } from './api/client';
 import ProductManagement from './components/ProductManagement';
 import DocumentCreation from './components/DocumentCreation';
 import DocumentList from './components/DocumentList';
+import DepartmentProductManager from './components/DepartmentProductManager';
 import { filterProductsAfterDelete } from './lib/productDelete';
 import { getDocumentIdentity, mergeDocuments, removeDocumentByIdentity } from './lib/documentIdentity';
 import { deleteSavedFormat, getSavedFormats, upsertSavedFormat } from './lib/savedFormats';
@@ -26,6 +27,7 @@ const getStockStatus = (product) => {
 
 const documentTabs = [
   { key: 'warehouse', label: 'Kho hàng', icon: Warehouse },
+  { key: 'parts', label: 'Quản lý CCDC', icon: ClipboardList },
   { key: 'create', label: 'Tạo phiếu mới', icon: FileText },
   { key: 'documents', label: 'Danh sách phiếu lưu trữ', icon: FolderOpen },
 ];
@@ -240,6 +242,7 @@ function App() {
       product: item.productId || item.product || null,
       productName: item.productName || item.content || '',
       content: item.content || item.productName || '',
+      sku: item.sku || '',
       unit: item.unit || 'Cái',
       quantity: Number(item.quantity || 0),
       unitPrice: Number(item.unitPrice || 0),
@@ -469,6 +472,10 @@ function App() {
               onDeleteProduct={handleDeleteProduct}
             />
           </div>
+        ) : null}
+
+        {activeTab === 'parts' ? (
+          <DepartmentProductManager />
         ) : null}
 
         {activeTab === 'create' ? (

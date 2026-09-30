@@ -66,11 +66,17 @@ const normalizeProposalItems = async (items = []) => {
     const quantity = Number(item.quantity || 0);
     const totalPrice = Number((unitPrice * quantity).toFixed(2));
     const productName = String(item.productName || item.content || '').trim();
+    const itemSku = String(item.sku || '').trim();
     const productId = item.product ? String(item.product) : null;
 
     let resolvedProduct = null;
     if (productId && mongoose.Types.ObjectId.isValid(productId)) {
       resolvedProduct = await Product.findById(productId);
+    }
+
+    // Prioritize SKU lookup when provided
+    if (!resolvedProduct && itemSku) {
+      resolvedProduct = await findProductByNameOrSku(itemSku);
     }
 
     if (!resolvedProduct && productName) {
@@ -80,6 +86,7 @@ const normalizeProposalItems = async (items = []) => {
     normalized.push({
       product: resolvedProduct ? resolvedProduct._id : null,
       productName: resolvedProduct ? resolvedProduct.name : productName,
+      sku: resolvedProduct ? resolvedProduct.sku : itemSku,
       content: productName || String(item.content || '').trim(),
       unit: String(item.unit || resolvedProduct?.unit || '').trim(),
       quantity,
@@ -223,12 +230,13 @@ export const createPurchaseProposal = async (req, res, next) => {
 
     for (const item of items) {
       const productName = String(item.productName || item.content || '').trim();
-      if (!productName) continue;
+      const itemSku = String(item.sku || '').trim();
+      if (!productName && !itemSku) continue;
 
       const quantity = Number(item.quantity || 0);
       if (quantity <= 0) continue;
 
-      // Find existing product by ID or by name (case-insensitive & tone-tolerant)
+      // Find existing product by ID, then SKU, then name (case-insensitive & tone-tolerant)
       let existingProduct = null;
       if (item.product && mongoose.Types.ObjectId.isValid(item.product)) {
         const prodKey = String(item.product);
@@ -239,7 +247,15 @@ export const createPurchaseProposal = async (req, res, next) => {
         }
       }
 
-      if (!existingProduct) {
+      // Prioritize SKU lookup when provided
+      if (!existingProduct && itemSku) {
+        existingProduct = await findProductByNameOrSku(itemSku);
+        if (existingProduct && processedProducts.has(String(existingProduct._id))) {
+          existingProduct = processedProducts.get(String(existingProduct._id));
+        }
+      }
+
+      if (!existingProduct && productName) {
         existingProduct = await findProductByNameOrSku(productName);
         if (existingProduct && processedProducts.has(String(existingProduct._id))) {
           existingProduct = processedProducts.get(String(existingProduct._id));
@@ -266,6 +282,7 @@ export const createPurchaseProposal = async (req, res, next) => {
         await existingProduct.save();
         item.product = existingProduct._id;
         item.productName = existingProduct.name;
+        item.sku = existingProduct.sku;
         processedProducts.set(String(existingProduct._id), existingProduct);
 
         if (!updatedProducts.some((p) => String(p._id) === String(existingProduct._id))) {
@@ -273,12 +290,15 @@ export const createPurchaseProposal = async (req, res, next) => {
         }
       } else {
         // Product does not exist → create a new one
-        const skuSuffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-        const generatedSku = `AUTO-${skuSuffix}`;
+        // Use user-provided SKU if available, otherwise auto-generate
+        const productSku = itemSku || (() => {
+          const skuSuffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+          return `AUTO-${skuSuffix}`;
+        })();
 
         const newProduct = new Product({
-          name: productName,
-          sku: generatedSku,
+          name: productName || itemSku,
+          sku: productSku,
           category: 'Khác',
           unit: item.unit || 'Cái',
           quantity,
@@ -300,6 +320,7 @@ export const createPurchaseProposal = async (req, res, next) => {
         try {
           await newProduct.save();
           item.product = newProduct._id;
+          item.sku = newProduct.sku;
           processedProducts.set(String(newProduct._id), newProduct);
           newProducts.push(newProduct);
         } catch (saveError) {
@@ -360,16 +381,31 @@ export const updatePurchaseProposal = async (req, res, next) => {
     const productInstanceMap = new Map();
 
     for (const item of newItems) {
-      let prod = item.product
-        ? await Product.findById(item.product)
-        : await findProductByNameOrSku(item.productName || item.content);
+      const itemSku = String(item.sku || '').trim();
+      let prod = null;
+
+      if (item.product) {
+        prod = await Product.findById(item.product);
+      }
+
+      // Prioritize SKU lookup when provided
+      if (!prod && itemSku) {
+        prod = await findProductByNameOrSku(itemSku);
+      }
 
       if (!prod && (item.productName || item.content)) {
-        const productName = String(item.productName || item.content).trim();
-        const skuSuffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+        prod = await findProductByNameOrSku(item.productName || item.content);
+      }
+
+      if (!prod && (item.productName || item.content || itemSku)) {
+        const productName = String(item.productName || item.content || itemSku).trim();
+        const productSku = itemSku || (() => {
+          const skuSuffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+          return `AUTO-${skuSuffix}`;
+        })();
         prod = new Product({
           name: productName,
-          sku: `AUTO-${skuSuffix}`,
+          sku: productSku,
           category: 'Khác',
           unit: item.unit || 'Cái',
           quantity: 0,
@@ -384,6 +420,7 @@ export const updatePurchaseProposal = async (req, res, next) => {
         const key = String(prod._id);
         item.product = prod._id;
         item.productName = prod.name;
+        item.sku = prod.sku;
         productInstanceMap.set(key, prod);
         newQtyMap.set(key, (newQtyMap.get(key) || 0) + Number(item.quantity || 0));
       }

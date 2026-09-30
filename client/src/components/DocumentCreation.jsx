@@ -21,7 +21,7 @@ const generateHandoverCode = (department = 'IT') => {
 };
 
 const initialPurchaseItems = [
-  { id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' },
+  { id: Date.now(), content: '', sku: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' },
 ];
 
 const initialHandoverItems = [
@@ -113,7 +113,7 @@ export default function DocumentCreation({
         reason: 'Cấp phát vật tư cho hoạt động hàng ngày của phòng IT.',
         date: new Date().toISOString().slice(0, 10),
         vatRate: 0,
-        items: [{ id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
+        items: [{ id: Date.now(), content: '', sku: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
       });
       setHandoverForm({
         name: `Phiếu bàn giao ${new Date().toLocaleDateString('vi-VN')}`,
@@ -143,12 +143,13 @@ export default function DocumentCreation({
               id: item.id || `${Date.now()}-${index}`,
               content: item.content || item.productName || '',
               productName: item.productName || item.content || '',
+              sku: item.sku || '',
               unit: item.unit || 'Cái',
               quantity: Number(item.quantity || 0),
               unitPrice: Number(item.unitPrice || 0),
               note: item.note || '',
             }))
-          : [{ id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
+          : [{ id: Date.now(), content: '', sku: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
       });
       return;
     }
@@ -201,7 +202,7 @@ export default function DocumentCreation({
   const addPurchaseItem = () => {
     setPurchaseForm((current) => ({
       ...current,
-      items: [...current.items, { id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
+      items: [...current.items, { id: Date.now(), content: '', sku: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
     }));
   };
 
@@ -266,6 +267,7 @@ export default function DocumentCreation({
         id: item.id,
         content: item.content,
         productName: item.content,
+        sku: item.sku || '',
         unit: item.unit,
         quantity: Number(item.quantity || 0),
         unitPrice: Number(item.unitPrice || 0),
@@ -282,7 +284,7 @@ export default function DocumentCreation({
       reason: 'Cấp phát vật tư cho hoạt động hàng ngày của phòng IT.',
       date: new Date().toISOString().slice(0, 10),
       vatRate: 0,
-      items: [{ id: Date.now(), content: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
+      items: [{ id: Date.now(), content: '', sku: '', unit: 'Cái', quantity: 1, unitPrice: 0, note: '' }],
     });
   };
 
@@ -474,6 +476,7 @@ export default function DocumentCreation({
                   <tr>
                     <th className="px-2 py-2">STT</th>
                     <th className="px-2 py-2">Nội dung đề xuất</th>
+                    <th className="px-2 py-2">Mã SP</th>
                     <th className="px-2 py-2">ĐVT</th>
                     <th className="px-2 py-2">SL</th>
                     <th className="px-2 py-2">Đơn giá</th>
@@ -491,6 +494,14 @@ export default function DocumentCreation({
                           value={item.content}
                           onChange={(event) => updatePurchaseItem(item.id, 'content', event.target.value)}
                           className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 outline-none"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          value={item.sku || ''}
+                          onChange={(event) => updatePurchaseItem(item.id, 'sku', event.target.value)}
+                          placeholder="VD: FCC10"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 outline-none font-mono text-xs"
                         />
                       </td>
                       <td className="px-2 py-2">
